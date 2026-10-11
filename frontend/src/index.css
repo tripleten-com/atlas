@@ -1,0 +1,128 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Atlas design system. Utility classes do most of the work; the few component classes below
+  keep repeated patterns (cards, buttons, badges, tables, form fields) identical everywhere.
+*/
+
+@layer base {
+  html {
+    font-feature-settings: "cv11", "ss01";
+  }
+  body {
+    @apply min-h-screen;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-white;
+  }
+  ::selection {
+    @apply bg-brand-100 text-brand-900;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-ink-200/80 bg-white shadow-card;
+  }
+  .card-header {
+    @apply flex items-center justify-between gap-3 border-b border-ink-100 px-5 py-3.5;
+  }
+  .card-title {
+    @apply text-sm font-semibold text-ink-900;
+  }
+  .card-subtitle {
+    @apply text-xs text-ink-500;
+  }
+  .card-body {
+    @apply px-5 py-4;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-sm {
+    @apply px-2.5 py-1.5 text-xs;
+  }
+  .btn-primary {
+    @apply bg-brand-700 text-white shadow-sm hover:bg-brand-800 active:bg-brand-900;
+  }
+  .btn-secondary {
+    @apply border border-ink-200 bg-white text-ink-800 shadow-sm hover:bg-ink-50 active:bg-ink-100;
+  }
+  .btn-ghost {
+    @apply text-ink-600 hover:bg-ink-100 hover:text-ink-900;
+  }
+  .btn-danger {
+    @apply border border-critical-100 bg-white text-critical-700 hover:bg-critical-50;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset;
+  }
+  .badge-neutral {
+    @apply bg-ink-50 text-ink-700 ring-ink-200;
+  }
+  .badge-brand {
+    @apply bg-brand-50 text-brand-800 ring-brand-200;
+  }
+  .badge-high {
+    @apply bg-critical-50 text-critical-700 ring-critical-100;
+  }
+  .badge-low {
+    @apply bg-info-50 text-info-700 ring-info-100;
+  }
+  .badge-warn {
+    @apply bg-caution-50 text-caution-700 ring-caution-100;
+  }
+  .badge-ok {
+    @apply bg-success-50 text-success-700 ring-success-100;
+  }
+
+  .field {
+    @apply block w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 shadow-sm
+      placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-medium text-ink-700;
+  }
+
+  .table-wrap {
+    @apply overflow-x-auto;
+  }
+  .data-table {
+    @apply w-full border-collapse text-left text-sm;
+  }
+  .data-table thead th {
+    @apply sticky top-0 z-[1] border-b border-ink-200 bg-ink-50/95 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink-500 backdrop-blur;
+  }
+  .data-table tbody td {
+    @apply border-b border-ink-100 px-4 py-3 align-middle text-ink-800;
+  }
+  .data-table tbody tr {
+    @apply transition-colors;
+  }
+  .data-table tbody tr.row-link {
+    @apply cursor-pointer hover:bg-brand-50/40;
+  }
+
+  .num {
+    @apply tabular-nums;
+  }
+  .kbd {
+    @apply rounded border border-ink-200 bg-ink-50 px-1.5 py-0.5 font-mono text-[10px] text-ink-500;
+  }
+}
+
+/* Recharts: quieter axes and gridlines */
+.recharts-cartesian-axis-tick-value {
+  @apply fill-ink-500 text-[11px];
+}
+.recharts-cartesian-grid line {
+  @apply stroke-ink-100;
+}
+.recharts-tooltip-wrapper {
+  @apply outline-none;
+}

@@ -1,0 +1,109 @@
+# Atlas, the whole stack on one machine.
+#
+#   cp .env.example .env
+#   docker compose up --build
+#
+#   frontend  http://localhost:3000
+#   API docs  http://localhost:8000/docs
+#   Meridian  http://localhost:8200  (the mock data feed)
+#
+# Reset everything, including the database:  docker compose down -v
+
+name: atlas
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql://${POSTGRES_USER:-atlas}:${POSTGRES_PASSWORD:-atlas}@db:5432/${POSTGRES_DB:-atlas}
+  JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+  DEMO_PASSWORD: ${DEMO_PASSWORD:-atlas-demo}
+  SEED_DEMO: ${SEED_DEMO:-true}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+  MERIDIAN_BASE_URL: http://meridian:8100
+  MERIDIAN_API_KEY: ${MERIDIAN_API_KEY:-mcx-dev-key}
+  MERIDIAN_CALLBACK_URL: http://backend:8000/api/integrations/webhooks/meridian
+  WATCHFILES_FORCE_POLLING: "true"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-atlas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atlas}
+      POSTGRES_DB: ${POSTGRES_DB:-atlas}
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atlas} -d ${POSTGRES_DB:-atlas}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment: *backend-env
+    command: sh -c "python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./backend:/app          # edit code on your machine, the server reloads
+      - ./models:/app/models    # trained model files you add live here
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment: *backend-env
+    command: python -m app.ingest.worker
+    volumes:
+      - ./backend:/app
+    healthcheck:
+      disable: true
+    depends_on:
+      backend:
+        condition: service_healthy
+      meridian:
+        condition: service_healthy
+
+  meridian:
+    build:
+      context: .
+      dockerfile: feed/Dockerfile
+    environment:
+      MERIDIAN_API_KEY: ${MERIDIAN_API_KEY:-mcx-dev-key}
+      FEED_FACILITIES: ${FEED_FACILITIES:-RGH,RNC,HMC}
+      FEED_BACKFILL_DAYS: ${FEED_BACKFILL_DAYS:-14}
+      FEED_CADENCE_SCALE: ${FEED_CADENCE_SCALE:-1}
+    ports:
+      - "${MERIDIAN_PORT:-8200}:8100"
+    volumes:
+      - meridian_data:/data
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules       # keep the container's own node_modules
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  meridian_data:

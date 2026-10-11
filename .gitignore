@@ -1,0 +1,28 @@
+# secrets and local config
+.env
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.egg-info/
+build/
+
+# node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# feed state when run outside Docker
+feed/data/
+
+# trained models are large; commit them deliberately if you must
+models/*
+!models/.gitkeep
+
+# editors and OS
+.DS_Store
+.idea/
+.vscode/
