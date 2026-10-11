@@ -1,0 +1,43 @@
+{
+  "categorical_columns": [
+    "sex",
+    "admission_type",
+    "admit_source",
+    "discharge_disposition"
+  ],
+  "feature_columns": [
+    "sex",
+    "admission_type",
+    "admit_source",
+    "discharge_disposition",
+    "age",
+    "length_of_stay_hours",
+    "prior_admissions_365d",
+    "abnormal_lab_count",
+    "drug_class_count",
+    "heart_rate_count",
+    "heart_rate_last",
+    "heart_rate_min",
+    "heart_rate_max",
+    "systolic_bp_count",
+    "systolic_bp_last",
+    "systolic_bp_min",
+    "systolic_bp_max",
+    "diastolic_bp_count",
+    "diastolic_bp_last",
+    "diastolic_bp_min",
+    "diastolic_bp_max",
+    "respiratory_rate_count",
+    "respiratory_rate_last",
+    "respiratory_rate_min",
+    "respiratory_rate_max",
+    "temperature_count",
+    "temperature_last",
+    "temperature_min",
+    "temperature_max",
+    "spo2_count",
+    "spo2_last",
+    "spo2_min",
+    "spo2_max"
+  ]
+}

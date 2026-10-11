@@ -12,3 +12,5 @@ export { EncountersPanel } from "./EncountersPanel";
 export { TimelinePanel } from "./TimelinePanel";
 export { RecentActivityPanel } from "./RecentActivityPanel";
 export { AiFeaturesSlot } from "./AiFeaturesSlot";
+export { RiskCard } from "./RiskCard";
+export { SummaryCard } from "./SummaryCard";

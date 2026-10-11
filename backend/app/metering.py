@@ -5,7 +5,9 @@
     record_usage(conn, user, feature="readmission-risk", model="readmission.joblib",
                  predictions=1, status="ok", elapsed_ms=12)
 
-Nothing in the provided platform calls this yet. AI features you add are expected to.
+`routers/risk.py` and `routers/summary.py` call this on every prediction or model call, including
+the refused and failed ones; features you add should too. Commit the connection before raising
+an HTTPException, or the row is rolled back with the request.
 """
 from __future__ import annotations
 

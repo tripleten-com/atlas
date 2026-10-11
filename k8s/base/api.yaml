@@ -1,0 +1,109 @@
+# The Atlas API: two identical Pods behind one Service. The Ingress sends /api, /health and
+# /docs here.
+#
+# Three probes, three questions:
+#   startupProbe   "has it finished starting?"  /health, up to 30 x 5s = 150s. Until this
+#                  passes, the other two probes are off, so a slow first start (waiting for
+#                  the seed Job to create the schema) is not treated as a crash.
+#   readinessProbe "can it take traffic?"       /health, which also checks the database. A
+#                  Pod that fails it is taken out of the Service but left running.
+#   livenessProbe  "is the process stuck?"      /health/live, which never touches the
+#                  database. If this used /health, a database outage would make Kubernetes
+#                  restart perfectly good API Pods.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: atlas
+  labels:
+    app: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      # Init containers run to completion before the main container starts. This one waits
+      # until Postgres accepts connections (same image, same helper the seed uses). Without
+      # it, an api Pod that starts before the database gives up after 30 seconds and shows one
+      # restart on a fresh deploy, which is harmless but confusing.
+      initContainers:
+        - name: wait-for-db
+          image: atlas-api:sha-dev   # the tag is replaced by kustomization.yaml
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-c", "from app.migrate import wait_for_db; wait_for_db(300)"]
+          envFrom:
+            - configMapRef:
+                name: atlas-config
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)
+      containers:
+        - name: api
+          image: atlas-api:sha-dev   # the tag is replaced by kustomization.yaml
+          imagePullPolicy: IfNotPresent
+          command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: atlas-config
+            - secretRef:
+                name: atlas-secrets
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: POSTGRES_PASSWORD
+            # $(POSTGRES_PASSWORD) is expanded by Kubernetes from the entry above, so the
+            # password never appears in this file
+            - name: DATABASE_URL
+              value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: atlas
+spec:
+  type: ClusterIP
+  selector:
+    app: api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

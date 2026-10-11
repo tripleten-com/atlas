@@ -1,10 +1,9 @@
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ChevronRight, UserX } from "lucide-react";
+import { ChevronRight, Sparkles, UserX } from "lucide-react";
 import { Empty, PanelBoundary, Retry, Skeleton, Tabs } from "../components";
 import { useDocumentTitle, usePatient } from "../hooks";
 import {
   ActiveMedicationsPanel,
-  AiFeaturesSlot,
   EncountersPanel,
   LabsPanel,
   LatestVitalsPanel,
@@ -12,6 +11,8 @@ import {
   PatientHeader,
   RecentActivityPanel,
   RecentLabsPanel,
+  RiskCard,
+  SummaryCard,
   TimelinePanel,
   VitalReadingsPanel,
   VitalsPanel,
@@ -96,9 +97,7 @@ export default function PatientDetail() {
               <PanelBoundary name="Latest vital signs">
                 <LatestVitalsPanel patient={patient} />
               </PanelBoundary>
-              <PanelBoundary name="AI insights">
-                <AiFeaturesSlot patientId={patient.id} />
-              </PanelBoundary>
+              <AiInsights patientId={patient.id} />
               <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
                 <div className="min-w-0 xl:col-span-8">
                   <PanelBoundary name="Vital sign trends">
@@ -165,6 +164,33 @@ export default function PatientDetail() {
         </div>
       </div>
     </div>
+  );
+}
+
+// The AI insights area: one card per AI feature. Add your next card to the grid below
+// (`AiFeaturesSlot` in ../panels is the empty placeholder this grid replaced).
+function AiInsights({ patientId }) {
+  return (
+    <section aria-labelledby="ai-insights-title" className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 id="ai-insights-title" className="flex items-center gap-2 text-sm font-semibold text-ink-700">
+          <Sparkles aria-hidden="true" className="h-4 w-4 text-brand-600" />
+          AI insights
+        </h2>
+        <Link to="/ai" className="shrink-0 text-sm font-medium text-brand-700 hover:underline">
+          About AI features
+        </Link>
+      </div>
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        <PanelBoundary name="Readmission risk">
+          <RiskCard patientId={patientId} />
+        </PanelBoundary>
+        <PanelBoundary name="Stay summary">
+          <SummaryCard patientId={patientId} />
+        </PanelBoundary>
+        {/* Your next AI card goes here */}
+      </div>
+    </section>
   );
 }
 

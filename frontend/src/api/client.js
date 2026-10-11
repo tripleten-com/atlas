@@ -4,7 +4,12 @@
 // turns failures into an ApiError. Components never build URLs themselves: they call one of
 // the named functions at the bottom of this file. To reach a new endpoint, add a function here.
 
-const API_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
+// Where the API lives, first match wins:
+//   1. window.__ATLAS_CONFIG__.apiUrl   written into config.js when the production container starts
+//   2. import.meta.env.VITE_API_URL     the Vite dev server's environment (docker-compose.yml)
+//   3. ""                               same origin: the page's own host serves /api (the Ingress)
+const RUNTIME_API_URL = (typeof window !== "undefined" && window.__ATLAS_CONFIG__?.apiUrl) || "";
+const API_URL = (RUNTIME_API_URL || import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 const TOKEN_KEY = "atlas.token";
 
 export class ApiError extends Error {
@@ -33,7 +38,8 @@ export const SESSION_EXPIRED_EVENT = "atlas:session-expired";
 // ---------------------------------------------------------------- the helpers
 
 function buildUrl(path, params) {
-  const url = new URL(API_URL + path);
+  // the second argument makes a relative API_URL ("" = same origin) resolve against the page
+  const url = new URL(API_URL + path, window.location.origin);
   Object.entries(params || {}).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, value);
   });
@@ -178,3 +184,8 @@ export const getUsage = (params) => get("/api/usage", params);
 export const getAudit = (params) => get("/api/audit", params);
 
 export { API_URL };
+
+// ---------------------------------------------------------------- AI features
+
+export const getReadmissionRisk = (id) => get(`/api/patients/${id}/risk/readmission`);
+export const postStaySummary = (id) => post(`/api/patients/${id}/summary`);

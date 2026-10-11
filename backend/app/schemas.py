@@ -178,6 +178,41 @@ class LabResultRow(LabOut):
     facility_name: str
 
 
+# ---------------------------------------------------------------- AI features
+
+class ReadmissionRisk(BaseModel):
+    probability: float = Field(
+        ..., description="Chance of another inpatient, observation or emergency encounter within 30 days of this discharge, 0 to 1"
+    )
+    band: Literal["low", "medium", "high"] = Field(..., description="low below 0.15, medium below 0.35, high from 0.35")
+    model_version: str
+    trained_on: str = Field(..., description="'ec2' when the model was trained in the AWS lab, 'local' otherwise")
+    trained_at: datetime | None = None
+    features_used: list[str] = Field(..., description="The feature columns the model read, in order")
+    as_of: datetime = Field(..., description="The discharge the prediction is about")
+    encounter_id: int
+    # What the record already knows about the window. A score is only a forecast while this is
+    # "pending"; afterwards it is what the model said at discharge, shown next to what happened.
+    window_closes_at: datetime = Field(..., description="as_of plus 30 days")
+    outcome: Literal["pending", "readmitted", "not_readmitted"]
+    readmitted_at: datetime | None = Field(None, description="When the first return encounter in the window began")
+
+
+class SourceRef(BaseModel):
+    table: Literal["encounters", "vitals", "labs", "medications"]
+    id: int
+
+
+class StaySummary(BaseModel):
+    summary: str = Field(..., description="Four to six sentences written from the source rows only")
+    sources: list[SourceRef] = Field(..., description="The rows the model was given; nothing else was")
+    model: str
+    input_tokens: int
+    output_tokens: int
+    elapsed_ms: int
+    encounter_id: int = Field(..., description="The encounter the summary is about")
+
+
 # ---------------------------------------------------------------- dashboard
 
 class Census(BaseModel):

@@ -1,0 +1,55 @@
+# One front door. ingress-nginx listens on the node's port 80 (mapped to localhost:80 by
+# kind-config.yaml) and routes by path prefix. Order matters only in that the more specific
+# prefixes are listed first; "/" catches everything else and goes to the web app.
+#
+# proxy-read-timeout: the live-updates stream (/api/activity/stream) is a long-lived
+# Server-Sent-Events response. nginx's default of 60 seconds would cut it off; one hour keeps
+# it open.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: atlas
+  namespace: atlas
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8000
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8000
+          - path: /docs
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8000
+          # the /docs page loads its schema from here
+          - path: /openapi.json
+            pathType: Exact
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80

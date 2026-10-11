@@ -1,0 +1,24 @@
+# A one-node kind cluster for Atlas.
+#   kind create cluster --name atlas --config k8s/kind-config.yaml
+#
+# The two port mappings let http://localhost (and https) on your machine reach the
+# ingress-nginx controller inside the node. The node label is what ingress-nginx's kind
+# manifest uses to pick the node it runs on.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: atlas
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP

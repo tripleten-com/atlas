@@ -39,6 +39,25 @@ services:
       timeout: 3s
       retries: 20
 
+  # One-shot: migrate the schema and seed the Test Facility, then exit. The API and the worker
+  # wait for it to finish (service_completed_successfully). Running it again is harmless: it
+  # leaves an already-seeded database alone. On Kubernetes the same command is a Job.
+  seed:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment: *backend-env
+    command: python -m app.seed
+    restart: "no"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
   backend:
     build:
       context: .
@@ -47,7 +66,7 @@ services:
       - path: .env
         required: false
     environment: *backend-env
-    command: sh -c "python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -56,6 +75,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
 
   worker:
     build:
@@ -71,6 +92,8 @@ services:
     healthcheck:
       disable: true
     depends_on:
+      seed:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       meridian:

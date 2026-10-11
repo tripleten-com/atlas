@@ -82,3 +82,50 @@ def test_unknown_event_types_are_skipped(scratch_connection):
 def test_summaries_are_readable():
     ev = _event(1, "e")
     assert summarize(ev).startswith("Vitals: HR 80")
+
+
+# ---------------------------------------------------------------- when the worker pulls instead of waiting
+
+def _connection(**overrides) -> dict:
+    """A feed connection row as maintain() sees it; override what the case is about."""
+    row = {"id": 1, "needs_resync": False, "stream_epoch": "e1", "high_watermark": 0, "last_delivery_at": None}
+    row.update(overrides)
+    return row
+
+
+def test_a_connection_that_never_received_anything_resyncs():
+    """Watermark 0 and no delivery ever: the callback URL is probably wrong, so pull from the replay endpoint."""
+    from app.ingest.worker import should_resync
+
+    remote = {"epoch": "e1", "latest_sequence": 1200}
+    assert should_resync(_connection(), remote) is True
+
+
+def test_a_brand_new_subscription_gets_one_pass_of_grace():
+    from app.ingest.worker import should_resync
+
+    remote = {"epoch": "e1", "latest_sequence": 1200}
+    assert should_resync(_connection(), remote, just_subscribed=True) is False
+
+
+def test_resync_only_when_behind_and_stale():
+    from datetime import timedelta
+
+    from app.ingest.worker import STALE_DELIVERY_SECONDS, should_resync
+
+    now = datetime.now(timezone.utc)
+    remote = {"epoch": "e1", "latest_sequence": 1200}
+    fresh = _connection(high_watermark=1000, last_delivery_at=now - timedelta(seconds=5))
+    stale = _connection(high_watermark=1000, last_delivery_at=now - timedelta(seconds=STALE_DELIVERY_SECONDS + 1))
+    caught_up = _connection(high_watermark=1200, last_delivery_at=now - timedelta(hours=1))
+    assert should_resync(fresh, remote, now=now) is False
+    assert should_resync(stale, remote, now=now) is True
+    assert should_resync(caught_up, remote, now=now) is False
+
+
+def test_admin_request_and_epoch_change_always_resync():
+    from app.ingest.worker import should_resync
+
+    remote = {"epoch": "e2", "latest_sequence": 0}
+    assert should_resync(_connection(needs_resync=True), {"epoch": "e1", "latest_sequence": 0}) is True
+    assert should_resync(_connection(stream_epoch="e1"), remote) is True

@@ -1,0 +1,62 @@
+# The ingestion worker: same image as the API, different command, no Service (nothing calls
+# it; it calls Meridian and the database). One replica is enough for this feed.
+#
+# It has no HTTP port, so liveness is an exec probe: the worker touches /tmp/worker-heartbeat
+# once per loop, and the probe fails when that file is older than 120 seconds.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: atlas
+  labels:
+    app: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: atlas-api:sha-dev   # the tag is replaced by kustomization.yaml
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.ingest.worker"]
+          envFrom:
+            - configMapRef:
+                name: atlas-config
+          # Least privilege: the worker talks to Postgres and Meridian, so it gets only those two
+          # keys from the Secret. It never signs a token or calls the language model, so it does
+          # not see JWT_SECRET or LLM_API_KEY (compare api.yaml, which needs all four).
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: POSTGRES_PASSWORD
+            - name: MERIDIAN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: MERIDIAN_API_KEY
+            - name: DATABASE_URL
+              value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - test $(( $(date +%s) - $(stat -c %Y /tmp/worker-heartbeat) )) -lt 120
+            initialDelaySeconds: 60   # the worker waits for the seed Job before its loop starts
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

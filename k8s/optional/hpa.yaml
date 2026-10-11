@@ -1,0 +1,32 @@
+# Optional: scale the API between 2 and 5 Pods on CPU. Not part of the required build.
+#
+# The autoscaler needs CPU numbers, which come from metrics-server. kind does not ship it:
+#   kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#   kubectl -n kube-system patch deployment metrics-server --type=json \
+#     -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+# (the patch is needed because kind's node certificates are self-signed). Wait a minute, check
+# `kubectl top pods -n atlas` prints numbers, then:
+#   kubectl apply -f k8s/optional/hpa.yaml
+#   kubectl -n atlas get hpa -w
+#
+# Only the API scales. The database and Meridian hold state on a single disk and must stay at
+# one replica; the worker claims events with row locks and one copy is plenty here.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+  namespace: atlas
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60   # percent of the CPU *request* (100m), averaged over the Pods

@@ -1,0 +1,84 @@
+# Task 4 exercise. This api Deployment was rewritten by a colleague and does not work. Apply it
+# on top of a running cluster, watch what happens, and write down what is wrong and how you
+# found it. Restore the working version afterwards with `kubectl apply -k k8s/base`.
+#
+# Before applying, set `image:` below to the tag you loaded into kind (the newTag value in
+# k8s/base/kustomization.yaml); this file is applied with -f, so kustomize does not do it.
+#
+#   kubectl -n atlas apply -f k8s/exercises/broken-api.yaml
+#   kubectl -n atlas get pods -w
+#   kubectl -n atlas describe pod <one of the new api pods>
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: atlas
+  labels:
+    app: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: atlas-api:sha-c2e3970
+          imagePullPolicy: IfNotPresent
+          command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - name: http
+              containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: atlas-config
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: POSTGRES_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: JWT_SECRETS
+            - name: MERIDIAN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: MERIDIAN_API_KEY
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: LLM_API_KEY
+            - name: DATABASE_URL
+              value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

@@ -1,0 +1,21 @@
+# What `docker build` must never see when the repository root is the build context
+# (backend/Dockerfile and feed/Dockerfile). The Dockerfiles copy only backend/, feed/,
+# packages/clinsim and models/, but the whole context is still sent to the Docker daemon, and a
+# careless `COPY . .` would bake these into an image. Keeping the secrets and the big folders
+# out here is what makes "no key ever reaches an image" true, and it makes builds faster.
+.git
+.env
+k8s/secret.env
+.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+frontend/node_modules
+frontend/dist
+frontend/.vite
+feed/data
+training
+evals
+docs
+scratch
+*.md

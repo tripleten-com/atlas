@@ -1,0 +1,53 @@
+# Runs the migrations and seeds the Test Facility, once. A Job runs a Pod to completion; a
+# Deployment would keep restarting it. The seed script is safe to run again (it skips what
+# already exists), so re-running is just:
+#   kubectl -n atlas delete job atlas-seed --ignore-not-found && kubectl apply -k k8s/base
+#
+# A Job's pod template cannot be changed once created. Applying the base with a new image tag
+# while this Job still exists fails with "field is immutable"; delete the Job first (the line
+# above). Ten minutes after it finishes it removes itself, so the problem only shows up when
+# you rebuild quickly.
+#
+# The API's startup probe waits for /health, which needs the schema this Job creates, so
+# the api Pods become Ready only after this Job has finished. The Job itself waits up to a
+# minute for Postgres (wait_for_db in app/migrate.py) and retries twice if that runs out.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: atlas-seed
+  namespace: atlas
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600   # the finished Job and its Pod are cleaned up after ten minutes
+  template:
+    metadata:
+      labels:
+        app: atlas-seed
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: seed
+          image: atlas-api:sha-dev   # the tag is replaced by kustomization.yaml
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.seed"]
+          envFrom:
+            - configMapRef:
+                name: atlas-config
+          # The seed only writes to Postgres, so the database password is the one Secret key it gets.
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: POSTGRES_PASSWORD
+            # $(POSTGRES_PASSWORD) is expanded by Kubernetes from the entry above, so the
+            # password never appears in this file
+            - name: DATABASE_URL
+              value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi

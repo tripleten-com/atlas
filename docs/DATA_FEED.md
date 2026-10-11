@@ -29,7 +29,7 @@ vendor would.
 
 | Code | Facility | Organisation | Source |
 |---|---|---|---|
-| `DEMO` | Test Facility | Riverside Health | Seeded once: two years of history, never changes |
+| `DEMO` | Test Facility | Riverside Health | Seeded once: two years of history with fixed dates that end on the day it was seeded; never changes |
 | `RGH` | Riverside General Hospital | Riverside Health | Meridian feed, live |
 | `RNC` | Northgate Clinic | Riverside Health | Meridian feed, live, outpatient only |
 | `HMC` | Harborview Medical Center | Harborview Medical Group | Meridian feed, live |
@@ -108,18 +108,23 @@ the same batch, so nothing is lost while Atlas is down.
 
 ## What Atlas does with it
 
-1. **Store raw, idempotently.** Every event lands in `ingest_events` first, unique on
+1. Store raw, idempotently. Every event lands in `ingest_events` first, unique on
    Meridian's event id. A redelivered event is counted as a duplicate and ignored.
-2. **Track the high watermark.** For each connection Atlas records the highest sequence it
+2. Track the high watermark. For each connection Atlas records the highest sequence it
    holds with no gap below it. A delivery that skips ahead sets `needs_resync`.
-3. **Resync.** Every minute (or at once when an admin presses Resync) the worker pulls
-   anything after the watermark from `GET /v1/facilities/{code}/events?after_sequence=N`.
-4. **Apply in order.** The worker (`python -m app.ingest.worker`) claims pending events in
+3. Resync. Every minute (`RESYNC_CHECK_SECONDS`) the worker compares each connection with
+   Meridian and pulls anything after the watermark from
+   `GET /v1/facilities/{code}/events?after_sequence=N` when an admin pressed Resync, when a
+   gap set `needs_resync`, when Meridian's log was reset (new `epoch`), or when Meridian holds
+   events Atlas does not and no delivery has landed for 90 seconds. A connection that has
+   never received a delivery counts as stalled too, so a wrong `MERIDIAN_CALLBACK_URL` still
+   gets data by resync (`should_resync()` in `backend/app/ingest/worker.py`).
+4. Apply in order. The worker (`python -m app.ingest.worker`) claims pending events in
    sequence order and applies each in its own savepoint.
-5. **Defer what arrives early.** A vital for a visit whose admission has not arrived yet is
+5. Defer what arrives early. A vital for a visit whose admission has not arrived yet is
    marked `deferred` and retried with backoff (2 s, 4 s, 8 s...). After eight attempts it is
    `failed` and shows on the Integrations page, where an admin can requeue it.
-6. **Announce.** After each batch the worker sends `NOTIFY atlas_events`. The API relays that
+6. Announce. After each batch the worker sends `NOTIFY atlas_events`. The API relays that
    to browsers over Server-Sent Events, and open pages refresh.
 
 ## Meridian is untidy on purpose
@@ -135,8 +140,7 @@ The ingestion log on each integration's page shows all three happening, and what
 ## Useful commands
 
 ```bash
-# Meridian's own view: facilities, sequences, subscriptions
-open http://localhost:8200
+# Meridian's own view: facilities, sequences, subscriptions: visit http://localhost:8200 in your browser
 curl -H "Authorization: Bearer mcx-dev-key" http://localhost:8200/v1/subscriptions
 
 # replay events yourself

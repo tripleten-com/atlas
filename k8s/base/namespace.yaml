@@ -1,0 +1,6 @@
+# Everything Atlas runs in this namespace, so `kubectl -n atlas ...` shows the whole product
+# and `kubectl delete namespace atlas` removes all of it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: atlas

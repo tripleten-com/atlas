@@ -11,3 +11,10 @@ router = APIRouter(tags=["health"])
 def health(conn: Connection = Depends(get_db)) -> dict:
     row = fetch_one(conn, "SELECT count(*) AS n FROM schema_migrations")
     return {"status": "ok", "database": "ok", "migrations": row["n"]}
+
+
+@router.get("/health/live")
+def live() -> dict:
+    # Liveness only: "is the process up?" It never touches the database, so a database outage
+    # does not make Kubernetes restart healthy API pods. Readiness still uses /health above.
+    return {"status": "alive"}

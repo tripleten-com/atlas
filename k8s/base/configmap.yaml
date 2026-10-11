@@ -1,0 +1,31 @@
+# Non-secret settings shared by the api, worker, seed Job and meridian. Anything that is a
+# password or a key lives in the Secret `atlas-secrets` instead (see secret.example.env).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atlas-config
+  namespace: atlas
+data:
+  # database (the password comes from the Secret; DATABASE_URL is assembled in each Deployment)
+  POSTGRES_USER: atlas
+  POSTGRES_DB: atlas
+
+  # the API
+  CORS_ORIGINS: http://localhost
+  SEED_DEMO: "true"
+  DEMO_PASSWORD: atlas-demo
+
+  # the Meridian feed. Service names are DNS names inside the cluster: `meridian` and `api`
+  # resolve to the Services in this namespace. The callback URL is where Meridian delivers
+  # webhooks; if it is wrong, nothing ever arrives and resync is the only way data gets in.
+  MERIDIAN_BASE_URL: http://meridian:8100
+  MERIDIAN_CALLBACK_URL: http://api:8000/api/integrations/webhooks/meridian
+  FEED_FACILITIES: RGH,RNC,HMC
+  FEED_BACKFILL_DAYS: "14"
+  FEED_CADENCE_SCALE: "1"
+
+  # AI features (the model file is baked into the atlas-api image; the LLM key is in the Secret)
+  MODEL_PATH: /app/models/readmission.joblib
+  LLM_BASE_URL: https://api.tokenfactory.nebius.com/v1/
+  LLM_MODEL: Qwen/Qwen3-235B-A22B-Instruct-2507
+  LLM_DAILY_TOKEN_LIMIT: "200000"

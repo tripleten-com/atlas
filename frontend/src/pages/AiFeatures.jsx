@@ -1,14 +1,58 @@
-import { ChevronRight, Code2, FlaskConical, LayoutDashboard, ShieldCheck, Sparkles, UserRound } from "lucide-react";
+import { Activity, ChevronRight, Code2, FlaskConical, LayoutDashboard, MessageSquareText, ShieldCheck, Sparkles, UserRound } from "lucide-react";
+import { Link } from "react-router-dom";
 import { getFacilities } from "../api/client";
 import { Card, PageHeader, PanelSkeleton, Retry } from "../components";
 import { useApi, useDocumentTitle } from "../hooks";
 import { formatNumber } from "../lib/format";
 
+// This page is the map of Atlas's AI features: the two that ship with the reference platform,
+// the clinical questions and generative features a team can build next, the data every
+// feature reads, and the seams in the code where a new one plugs in.
+
+const BUILT = [
+  {
+    icon: Activity,
+    title: "Readmission risk",
+    kind: "Predictive",
+    text: "For a patient whose inpatient or observation stay has ended: the chance of another admission within 30 days, as a probability and a band (low, medium, high). A scikit-learn model trained on the Test Facility's history. It appears in the AI insights section of the patient record.",
+    states: "Shows a loading state, a 'not applicable' state when the patient has no finished stay, a 'model unavailable' state, and a low-confidence note in the medium band.",
+    route: "GET /api/patients/{id}/risk/readmission",
+  },
+  {
+    icon: MessageSquareText,
+    title: "Stay summary",
+    kind: "Generative",
+    text: "Four to six sentences about the patient's latest visit, written by a language model from rows the backend fetched: the encounter, the last reading of each vital, up to twenty lab results and the stay's medication orders. Every summary lists the rows it came from.",
+    states: "Runs only when the clinician presses the button. Shows loading, 'no model configured', 'daily limit reached' and error states, and records every call, including refusals, on the Usage page.",
+    route: "POST /api/patients/{id}/summary",
+  },
+];
+
+// The clinical questions a team may choose for a predictive feature. The Test Facility is the
+// training set for all of them; the live facilities are where the feature is watched.
+const PREDICTIVE_MENU = [
+  { code: "A", question: "Readmission within 30 days", unit: "One finished inpatient or observation stay", when: "At discharge", note: "Built here" },
+  { code: "B", question: "Prolonged stay", unit: "One inpatient stay", when: "24 hours after admission", note: "Longer than the Test Facility median for that admission type" },
+  { code: "C", question: "Deterioration during the stay", unit: "One inpatient stay", when: "12 hours after admission", note: "A vital sign crossing a threshold you define and write down" },
+  { code: "D", question: "Discharge to somewhere other than home", unit: "One inpatient stay", when: "24 hours after admission", note: "Disposition not home or home health" },
+  { code: "E", question: "Your own question", unit: "You define it", when: "You define it", note: "Approved by your reviewer first" },
+];
+
+// The generative and agentic features a team may choose. Each one is grounded in rows the
+// backend fetched for the caller's organisation; the model never sees anything else.
+const GENERATIVE_MENU = [
+  { code: "G1", feature: "Stay summary", kind: "Generative", grounding: "Encounter, vitals, labs, medications for that visit", action: "None", note: "Built here" },
+  { code: "G2", feature: "Discharge summary draft the clinician edits", kind: "Generative", grounding: "Same as G1 plus doses given", action: "Saves a draft", note: "" },
+  { code: "G3", feature: "Results triage note for a flagged lab", kind: "Generative", grounding: "The result, the patient's other results on that panel, active medications", action: "None", note: "" },
+  { code: "A1", feature: "Record assistant that answers questions about one patient", kind: "Agentic", grounding: "Read-only tools: vitals, labs, medications, encounters", action: "None", note: "" },
+  { code: "A2", feature: "Medication check that flags one interaction class", kind: "Agentic", grounding: "Tools for active medications and recent labs", action: "One note the clinician approves", note: "" },
+];
+
 const PLACES = [
   {
     icon: UserRound,
     title: "Patient record",
-    text: "Panels beside vitals, labs and medications, such as a risk score or a summary of the stay.",
+    text: "The AI insights section beside vitals, labs and medications. Both built features live here.",
   },
   {
     icon: LayoutDashboard,
@@ -44,16 +88,31 @@ const SEAMS = [
     path: "backend/app/routers/",
     text: (
       <>
-        Add a router for the feature, then register it in <Code>backend/app/main.py</Code>.
+        One file per feature, registered in <Code>backend/app/main.py</Code>. <Code>risk.py</Code> and <Code>summary.py</Code> are
+        the two built ones; copy their shape.
       </>
     ),
   },
-  { path: "frontend/src/api/client.js", text: "Add one function per new endpoint. Components never build URLs themselves." },
+  {
+    path: "backend/app/ml.py",
+    text: "The model's feature SQL, shared by the training export and the route, plus load_model() and the band thresholds.",
+  },
+  {
+    path: "backend/app/llm.py",
+    text: (
+      <>
+        The language-model client. Any OpenAI-compatible endpoint, chosen by <Code>LLM_BASE_URL</Code>, <Code>LLM_API_KEY</Code> and{" "}
+        <Code>LLM_MODEL</Code>.
+      </>
+    ),
+  },
+  { path: "frontend/src/api/client.js", text: "One function per endpoint. Components never build URLs themselves." },
   {
     path: "frontend/src/panels/",
     text: (
       <>
-        Add a panel component and list it in <Code>frontend/src/pages/PatientDetail.jsx</Code> so it shows on the patient record.
+        A card per feature, listed in the AI insights section of <Code>frontend/src/pages/PatientDetail.jsx</Code>. <Code>RiskCard.jsx</Code>{" "}
+        and <Code>SummaryCard.jsx</Code> show every state a card must handle.
       </>
     ),
   },
@@ -61,23 +120,71 @@ const SEAMS = [
     path: "backend/app/metering.py",
     text: (
       <>
-        Call <Code>record_usage()</Code> on every model or LLM call so it shows on the Usage page.
+        <Code>record_usage()</Code> on every model call, including refused and failed ones. The Usage page and the daily token ceiling
+        count these rows.
       </>
     ),
   },
   {
-    path: ".env",
-    text: (
-      <>
-        Set <Code>MODEL_PATH</Code> for a trained model file and the <Code>LLM_*</Code> settings for a language model provider.
-      </>
-    ),
+    path: "training/, models/, evals/",
+    text: "The export and training scripts with each run's evidence, the trained artifact the API serves, and the golden set with its evaluators.",
   },
 ];
 
 function Code({ children }) {
   return <code className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[12px] text-ink-800">{children}</code>;
 }
+
+function MenuTable({ columns, rows, caption }) {
+  return (
+    <div className="table-wrap">
+      <table className="data-table">
+        <caption className="sr-only">{caption}</caption>
+        <thead>
+          <tr>
+            {columns.map((c) => (
+              <th key={c.key} scope="col" className={c.className}>
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.code}>
+              {columns.map((c) => (
+                <td key={c.key} className={c.cellClassName}>
+                  {c.key === "note" && r.note === "Built here" ? (
+                    <span className="badge badge-brand">Built here</span>
+                  ) : (
+                    r[c.key] || <span className="text-xs text-ink-400">&mdash;</span>
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const PREDICTIVE_COLUMNS = [
+  { key: "code", label: "Code", className: "w-12", cellClassName: "font-mono text-xs text-ink-900" },
+  { key: "question", label: "Question", cellClassName: "min-w-[12rem] text-ink-900" },
+  { key: "unit", label: "One prediction per", cellClassName: "min-w-[12rem] text-ink-600" },
+  { key: "when", label: "Predicted", cellClassName: "whitespace-nowrap text-ink-600" },
+  { key: "note", label: "Notes", cellClassName: "min-w-[12rem] text-ink-600" },
+];
+
+const GENERATIVE_COLUMNS = [
+  { key: "code", label: "Code", className: "w-12", cellClassName: "font-mono text-xs text-ink-900" },
+  { key: "feature", label: "Feature", cellClassName: "min-w-[14rem] text-ink-900" },
+  { key: "kind", label: "Kind", cellClassName: "whitespace-nowrap text-ink-600" },
+  { key: "grounding", label: "Grounded in", cellClassName: "min-w-[14rem] text-ink-600" },
+  { key: "action", label: "Writes anything?", cellClassName: "min-w-[8rem] text-ink-600" },
+  { key: "note", label: "Notes", cellClassName: "text-ink-600" },
+];
 
 function DataTable() {
   const { data, error, loading, reload } = useApi(() => getFacilities(), []);
@@ -119,7 +226,8 @@ function DataTable() {
         <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-brand-700" />
         <p>
           Every row carries a <Code>tenant_id</Code>. A feature must filter on the signed-in user&apos;s tenant and never
-          read, train on or return another organisation&apos;s records.
+          read, train on or return another organisation&apos;s records. Train only on the Test Facility; its history never
+          changes.
         </p>
       </div>
     </>
@@ -131,22 +239,55 @@ export default function AiFeatures() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="AI features" description="Predictive and generative features that run on your organisation's records." />
+      <PageHeader
+        title="AI features"
+        description="Two features ship with Atlas. This page explains them, lists what a team can build next, and shows where a new feature plugs in."
+      />
 
-      <section className="card overflow-hidden">
-        <div className="flex flex-col items-center gap-4 bg-gradient-to-b from-brand-50/70 to-white px-6 py-12 text-center">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-card ring-1 ring-brand-100">
-            <Sparkles aria-hidden="true" className="h-6 w-6" />
-          </span>
-          <div>
-            <h2 className="text-lg font-semibold text-ink-900">No AI features connected yet</h2>
-            <p className="mx-auto mt-1.5 max-w-lg text-sm text-ink-600">
-              Once a feature is connected, it is listed here and its results appear where clinicians already work: on the
-              patient record, the overview and the results worklist.
-            </p>
-          </div>
+      <section aria-labelledby="built-heading">
+        <h2 id="built-heading" className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink-900">
+          <Sparkles aria-hidden="true" className="h-4 w-4 text-brand-600" />
+          Built into the reference platform
+        </h2>
+        <div className="grid gap-4 md:grid-cols-2">
+          {BUILT.map((f) => (
+            <div key={f.title} className="card p-5">
+              <div className="flex items-start justify-between gap-3">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand-700 ring-1 ring-brand-100">
+                  <f.icon aria-hidden="true" className="h-4 w-4" />
+                </span>
+                <span className="badge badge-neutral">{f.kind}</span>
+              </div>
+              <h3 className="mt-3 text-sm font-semibold text-ink-900">{f.title}</h3>
+              <p className="mt-1 text-sm text-ink-600">{f.text}</p>
+              <p className="mt-2 text-sm text-ink-600">{f.states}</p>
+              <p className="mt-3">
+                <Code>{f.route}</Code>
+              </p>
+            </div>
+          ))}
         </div>
+        <p className="mt-3 text-sm text-ink-600">
+          Open any patient record to see both cards. The model behind the risk score was trained on the Test Facility; the summary
+          needs a language-model key on the server, and says so when there is none.
+        </p>
       </section>
+
+      <Card
+        title="Predictive features you can build"
+        subtitle="Pick one clinical question. Build the label from encounter dates and vitals yourself; use only data available at the prediction time."
+        padded={false}
+      >
+        <MenuTable columns={PREDICTIVE_COLUMNS} rows={PREDICTIVE_MENU} caption="Clinical questions for a predictive feature" />
+      </Card>
+
+      <Card
+        title="Generative and agentic features you can build"
+        subtitle="Pick one. The model sees only rows the backend fetched for the signed-in organisation, and every call is metered."
+        padded={false}
+      >
+        <MenuTable columns={GENERATIVE_COLUMNS} rows={GENERATIVE_MENU} caption="Generative and agentic feature options" />
+      </Card>
 
       <section aria-labelledby="where-heading">
         <h2 id="where-heading" className="mb-3 text-sm font-semibold text-ink-900">
@@ -192,6 +333,13 @@ export default function AiFeatures() {
             </li>
           ))}
         </ul>
+        <p className="border-t border-ink-100 px-5 py-3 text-xs text-ink-600">
+          The repository&apos;s <Code>docs/ADDING_A_FEATURE.md</Code> walks through the whole path, and{" "}
+          <Link to="/usage" className="font-medium text-brand-700 hover:underline">
+            Usage
+          </Link>{" "}
+          shows what every feature has cost so far.
+        </p>
       </details>
     </div>
   );

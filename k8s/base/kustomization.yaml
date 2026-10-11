@@ -1,0 +1,28 @@
+# Apply everything with one command:
+#   kubectl apply -k k8s/base
+#
+# After building new images, change newTag below to the new tag (sha-<short git hash>) and
+# apply again, or run:  cd k8s/base && kustomize edit set image atlas-api=atlas-api:sha-abc1234
+# Never use :latest here. kind only knows the images you loaded with `kind load docker-image`,
+# and a fixed tag is what makes a rollback possible.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - postgres.yaml
+  - meridian.yaml
+  - seed-job.yaml
+  - api.yaml
+  - worker.yaml
+  - web.yaml
+  - ingress.yaml
+
+images:
+  - name: atlas-api
+    newTag: sha-c2e3970
+  - name: atlas-web
+    newTag: sha-c2e3970
+  - name: atlas-meridian
+    newTag: sha-c2e3970

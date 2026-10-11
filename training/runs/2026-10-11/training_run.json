@@ -1,0 +1,110 @@
+{
+  "question": "readmission_30d",
+  "model_version": "readmission-20261011-870b90fb",
+  "trained_at": "2026-10-11T18:47:22.376089+00:00",
+  "trained_on": "local",
+  "instance_hint": null,
+  "python": "3.12.3",
+  "packages": {
+    "numpy": "2.0.2",
+    "pandas": "2.2.3",
+    "scikit-learn": "1.6.1",
+    "joblib": "1.4.2"
+  },
+  "data_file": "readmission.csv",
+  "data_sha256": "870b90fba542537996c4fc4cfc10f700b5b9a5e87286c2c7a4e2dee1fb6a5137",
+  "rows": 1790,
+  "positives": 465,
+  "split": {
+    "method": "grouped_by_patient",
+    "group": "patient_id",
+    "test_fraction": 0.2,
+    "random_state": 42,
+    "train_rows": 1418,
+    "test_rows": 372
+  },
+  "boosting_rounds": 112,
+  "train_metrics": {
+    "auroc": 0.8289,
+    "average_precision": 0.6745,
+    "brier": 0.1366
+  },
+  "metrics": {
+    "auroc": 0.7596,
+    "average_precision": 0.6263,
+    "brier": 0.1627
+  },
+  "calibration": [
+    {
+      "lower": 0.0,
+      "upper": 0.1,
+      "count": 41,
+      "mean_predicted": 0.0821,
+      "observed": 0.0976
+    },
+    {
+      "lower": 0.1,
+      "upper": 0.2,
+      "count": 133,
+      "mean_predicted": 0.1472,
+      "observed": 0.1353
+    },
+    {
+      "lower": 0.2,
+      "upper": 0.3,
+      "count": 88,
+      "mean_predicted": 0.2422,
+      "observed": 0.3182
+    },
+    {
+      "lower": 0.3,
+      "upper": 0.4,
+      "count": 49,
+      "mean_predicted": 0.3408,
+      "observed": 0.3061
+    },
+    {
+      "lower": 0.4,
+      "upper": 0.5,
+      "count": 16,
+      "mean_predicted": 0.4417,
+      "observed": 0.5
+    },
+    {
+      "lower": 0.5,
+      "upper": 0.6,
+      "count": 15,
+      "mean_predicted": 0.5449,
+      "observed": 0.5333
+    },
+    {
+      "lower": 0.6,
+      "upper": 0.7,
+      "count": 14,
+      "mean_predicted": 0.6551,
+      "observed": 0.7857
+    },
+    {
+      "lower": 0.7,
+      "upper": 0.8,
+      "count": 8,
+      "mean_predicted": 0.7577,
+      "observed": 1.0
+    },
+    {
+      "lower": 0.8,
+      "upper": 0.9,
+      "count": 7,
+      "mean_predicted": 0.8492,
+      "observed": 0.8571
+    },
+    {
+      "lower": 0.9,
+      "upper": 1.0,
+      "count": 1,
+      "mean_predicted": 0.922,
+      "observed": 1.0
+    }
+  ],
+  "artifact_sha256": "ca33eaca550d6d7a0244524166e809f87d639453988cc3e7cbe0f84ee864b9e6"
+}

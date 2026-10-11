@@ -21,6 +21,7 @@ import sys
 import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 
 import psycopg
 
@@ -37,6 +38,7 @@ MAX_ATTEMPTS = 8
 RESYNC_PAGE = 500
 RESYNC_MAX_PAGES = 40
 STALE_DELIVERY_SECONDS = 90
+HEARTBEAT_FILE = Path("/tmp/worker-heartbeat")
 
 _running = True
 
@@ -44,6 +46,15 @@ _running = True
 def _stop(*_):
     global _running
     _running = False
+
+
+def heartbeat() -> None:
+    """Touch a file once per loop. A Kubernetes liveness probe checks the file's age, so a
+    worker that has stopped looping (hung, deadlocked) gets restarted."""
+    try:
+        HEARTBEAT_FILE.touch()
+    except OSError:
+        pass  # no /tmp (for example on Windows outside Docker): nothing is probing us there
 
 
 CONNECTION_SQL = """
@@ -127,10 +138,15 @@ def process_batch(limit: int) -> int:
 
 # ---------------------------------------------------------------- maintain
 
-def ensure_subscription(client: MeridianClient, conn_row: dict) -> dict | None:
-    """Return Meridian's view of this facility's subscription, creating it if needed."""
+def ensure_subscription(client: MeridianClient, conn_row: dict) -> tuple[dict | None, bool]:
+    """Return Meridian's view of this facility's subscription, creating it if needed.
+
+    The second value is True when the subscription was created just now, so the caller can give
+    the first webhook delivery a chance to land before deciding the connection has stalled."""
     remote = client.subscription(conn_row["subscription_id"]) if conn_row["subscription_id"] else None
+    just_subscribed = False
     if remote is None:
+        just_subscribed = True
         remote = client.subscribe(conn_row["facility_code"], settings.meridian_callback_url,
                                   conn_row["webhook_secret"], after_sequence=conn_row["high_watermark"])
         with connection() as conn:
@@ -141,7 +157,29 @@ def ensure_subscription(client: MeridianClient, conn_row: dict) -> dict | None:
         client.pause(remote["id"])
     elif conn_row["status"] != "paused" and remote.get("status") == "paused":
         client.resume(remote["id"])
-    return remote
+    return remote, just_subscribed
+
+
+def should_resync(conn_row: dict, remote: dict, just_subscribed: bool = False, now: datetime | None = None) -> bool:
+    """Decide whether to pull from Meridian's replay endpoint instead of waiting for webhooks.
+
+    Yes when an admin asked for it, when Meridian's log was reset, or when Meridian holds events we
+    do not and no delivery has landed for STALE_DELIVERY_SECONDS. A connection that has never
+    received a delivery at all counts as stalled too: a wrong MERIDIAN_CALLBACK_URL looks exactly
+    like that, and resync is the fallback. The one exception is the pass in which we subscribed,
+    because the first delivery is still on its way.
+    """
+    if conn_row["needs_resync"]:
+        return True
+    if conn_row["stream_epoch"] and remote.get("epoch") and remote["epoch"] != conn_row["stream_epoch"]:
+        return True
+    behind = remote.get("latest_sequence", 0) - conn_row["high_watermark"]
+    if behind <= 0:
+        return False
+    if conn_row["last_delivery_at"] is None:
+        return not just_subscribed
+    now = now or datetime.now(timezone.utc)
+    return (now - conn_row["last_delivery_at"]).total_seconds() > STALE_DELIVERY_SECONDS
 
 
 def resync(client: MeridianClient, connection_id: int) -> int:
@@ -176,17 +214,10 @@ def maintain(client: MeridianClient) -> None:
         rows = fetch_all(conn, CONNECTION_SQL + " ORDER BY c.id")
     for conn_row in rows:
         try:
-            remote = ensure_subscription(client, conn_row)
+            remote, just_subscribed = ensure_subscription(client, conn_row)
             if conn_row["status"] == "paused" or remote is None:
                 continue
-            behind = remote.get("latest_sequence", 0) - conn_row["high_watermark"]
-            delivery_age = (
-                (datetime.now(timezone.utc) - conn_row["last_delivery_at"]).total_seconds()
-                if conn_row["last_delivery_at"] else None
-            )
-            epoch_changed = conn_row["stream_epoch"] and remote.get("epoch") and remote["epoch"] != conn_row["stream_epoch"]
-            stalled = behind > 0 and (delivery_age is None or delivery_age > STALE_DELIVERY_SECONDS) and conn_row["high_watermark"] > 0
-            if conn_row["needs_resync"] or epoch_changed or stalled:
+            if should_resync(conn_row, remote, just_subscribed):
                 pulled = resync(client, conn_row["id"])
                 log.info("resync %s pulled %d events", conn_row["facility_code"], pulled)
         except MeridianError as exc:
@@ -214,6 +245,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
+    heartbeat()  # so the file exists while we wait for the database and the seed
     wait_for_db()
     wait_for_schema()
     open_pool()
@@ -225,6 +257,7 @@ def main() -> None:
     next_maintenance = 0.0
     try:
         while _running:
+            heartbeat()
             wake_maintenance = False
             if time.monotonic() >= next_maintenance:
                 maintain(client)
