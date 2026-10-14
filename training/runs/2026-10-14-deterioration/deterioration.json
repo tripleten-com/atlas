@@ -2,7 +2,7 @@
   "model": "deterioration_12h",
   "model_version": "deterioration-20261014-0877aaca",
   "question": "Will this admitted inpatient's vitals cross the deterioration line within the next 12 hours?",
-  "trained_at": "2026-10-14T10:57:06.401685+00:00",
+  "trained_at": "2026-10-14T12:10:45.865367+00:00",
   "trained_on": "local",
   "onset_rule": {
     "earliest_hour": 12,
@@ -135,6 +135,8 @@
     "sensitivity_at_threshold": 1.0,
     "window_recall_at_threshold": 0.94,
     "window_precision_at_threshold": 0.2425,
-    "median_lead_time_hours": 15.0
+    "median_lead_time_hours": 11.0,
+    "caught_encounters_any_hour": 39,
+    "median_lead_time_hours_any_hour": 15.0
   }
 }

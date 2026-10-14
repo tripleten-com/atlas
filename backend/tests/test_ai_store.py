@@ -171,13 +171,26 @@ def test_warning_is_logged_at_most_once_a_minute(caplog, monkeypatch):
     assert [r.getMessage() for r in caplog.records] == ["first (no store)"]
 
 
-def test_indexes_are_created_on_the_first_write_when_startup_missed_them(monkeypatch):
+@pytest.fixture
+def scratch_store(monkeypatch):
+    """A throwaway database on the same server, so a test can drop indexes and insert junk
+    without touching the `atlas_ai` collections the running API writes to. Dropped afterwards.
+    Settings are frozen, so the module's db() is swapped instead (every write goes through it)."""
+    monkeypatch.setattr(ai_store, "db", lambda: ai_store.client()["atlas_ai_test"])
+    ai_store.reset()
+    yield ai_store.db()
+    ai_store.client().drop_database("atlas_ai_test")
+    ai_store.reset()  # pytest restores db(); the next test builds a client for the real database
+
+
+def test_indexes_are_created_on_the_first_write_when_startup_missed_them(scratch_store):
     """On a cluster the api can start before mongo-0 answers, so the lifespan's ensure_indexes()
     fails. The first write that reaches the store must create the indexes instead."""
-    monkeypatch.setattr(ai_store, "_indexes_ready", False)
-    collection = ai_store.db()[ai_store.PREDICTIONS]
+    collection = scratch_store[ai_store.PREDICTIONS]
+    collection.insert_one({"request_id": "scratch-seed"})  # a fresh collection has no indexes to drop
     collection.drop_indexes()
     assert "created_at_ttl" not in collection.index_information()
+    assert ai_store._indexes_ready is False  # reset() cleared it, as a failed startup would leave it
 
     assert ai_store.record_prediction(
         1, "test-index-recovery", feature="readmission-risk", model_version="test",
@@ -186,4 +199,3 @@ def test_indexes_are_created_on_the_first_write_when_startup_missed_them(monkeyp
     names = collection.index_information()
     assert "created_at_ttl" in names and "tenant_patient_created" in names
     assert ai_store._indexes_ready is True
-    collection.delete_many({"request_id": "test-index-recovery"})

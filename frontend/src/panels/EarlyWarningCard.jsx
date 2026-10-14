@@ -12,9 +12,17 @@ const BANDS = {
   high: { label: "High risk", tone: "high" },
 };
 
-// The second predictive AI feature: for an inpatient who is admitted right now, the chance that
-// their vitals cross the deterioration line within the next 12 hours. The readmission card answers
-// for a discharged stay; this one answers for an open one. The API answers 404 when the patient
+// Below this score the number is not a calibrated chance. The reference model was trained with
+// class weighting (pos_weight about 65), and its calibration table (training_run.json) shows
+// observed rates of 0.7 to 5.4 percent in every bin from 0.2 to 0.9; only the top bin came close
+// to its score. So the low-confidence note shows for every scored answer under this line, not
+// just for the medium band.
+const CALIBRATED_FROM = 0.9;
+
+// The second predictive AI feature: for an inpatient who is admitted right now, a score for how
+// likely their vitals are to cross the deterioration line within the next 12 hours. The
+// readmission card answers for a discharged stay; this one answers for an open one. The API
+// answers 404 when the patient
 // has no open inpatient stay, 503 when no model file is installed, and 200 with one of three
 // states: "scored" (a forecast), "insufficient_data" (the stay is younger than 12 hours of vitals,
 // no forecast yet) and "deteriorating" (the onset rule already fired, so there is nothing left to
@@ -123,14 +131,17 @@ function Scored({ data }) {
         )}
       </div>
       <p className="text-sm text-ink-600">
-        Chance that the vitals cross the deterioration line (two or more of: heart rate above 120, respiratory rate above 24, SpO2 below
-        90, systolic pressure below 90, temperature above 38.5 °C) within 12 hours of {formatDateTime(data.as_of)}, read from the 24 hours
-        before it.
+        Model score for the vitals crossing the deterioration line (two or more of: heart rate above 120, respiratory rate above 24, SpO2
+        below 90, systolic pressure below 90, temperature above 38.5 °C) within 12 hours of {formatDateTime(data.as_of)}, read from the 24
+        hours before it. The score ranks patients; it is not the observed chance.
       </p>
-      {data.band === "medium" && (
+      {data.probability < CALIBRATED_FROM && (
         <p className="flex items-start gap-2 rounded-lg bg-caution-50 px-3 py-2 text-xs text-caution-700 ring-1 ring-inset ring-caution-100">
           <Info aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>Low confidence: scores in the middle band are the least reliable. Weigh it alongside the clinical picture.</span>
+          <span>
+            Low confidence: on the test set, stays scored below 90% went on to deteriorate far less often than the score suggests (under 6% in
+            every bin; the model's run record has the table). Treat the alert as a prompt to look, not as a probability.
+          </span>
         </p>
       )}
       <Footer data={data} />

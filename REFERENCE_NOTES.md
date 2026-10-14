@@ -407,9 +407,9 @@ cp training/runs/2026-10-14-deterioration/deterioration.{onnx,json} models/
 | Epochs | 21 run, best epoch 15 (validation AP 0.8772), stopped by patience 6; fit 23.6 s | `train.log` |
 | Test metrics | AUROC 0.9896, average precision 0.8936, Brier 0.0200 (base-rate Brier 0.0169) | `metrics` |
 | Training-set metrics | AUROC 0.9985, average precision 0.945, Brier 0.0213 | `train_metrics` |
-| One epoch, same data and batch 512 | cpu 8.09 s (24 threads; 10.25 s and 11.3 s in two earlier runs), cuda 0.65 s (0.71 s and 0.86 s earlier) | `epoch_seconds`, `--time-one-epoch` |
-| Whole run | 37.8 s wall | `train.log` |
-| Alerts at the 0.20 threshold (test windows) | 1,810 alerts over 1,133.3 patient-days = 159.71 per 100 patient-days; 39 of 39 deteriorations caught (encounter-level sensitivity 1.0); window recall 0.94, window precision 0.2425; median lead time 15.0 h | `alert_detail` |
+| One epoch, same data and batch 512 | cpu 5.63 s in the committed run (8.09 s, 10.25 s and 11.3 s in three earlier runs of the same command; 24 threads), cuda 0.6 s (0.65 s, 0.71 s and 0.86 s earlier) | `epoch_seconds`, `--time-one-epoch` |
+| Whole run | 38.1 s wall (37.8 s in the earlier run) | `train.log` |
+| Alerts at the 0.20 threshold (test windows) | 1,810 alerts over 1,133.3 patient-days = 159.71 per 100 patient-days; 39 of 39 deteriorations caught by an alert inside the 12-hour horizon (encounter-level sensitivity 1.0), median lead time 11.0 h; counting any earlier alert of the stay as well (`caught_encounters_any_hour`, the definition the first run used) still 39 of 39 with a median lead of 15.0 h; window recall 0.94, window precision 0.2425 | `alert_detail` |
 | Artifact | `deterioration.onnx` 71,413 bytes (70 KB), opset 17, inputs `sequence` [batch, 24, 12] and `static` [batch, 4], one output `probability` [batch] (sigmoid inside the graph); `deterioration.json` 2,881 bytes | `ls -l models/` |
 | Hashes | onnx sha256 `5872e65386e45bacd355df8bb2b601158167753d9ca7d26f3f971cbf12fc476c` = `artifact_sha256`; identical across three runs of the same command (seed 42 makes the training deterministic) | `sha256sum models/deterioration.onnx` |
 | ONNX against torch | onnxruntime 1.31.0 reproduces the torch probabilities on ten saved test windows spanning the probability range within 2.88e-05 (tolerance 1e-4) | `training/check_onnx.py` |
@@ -433,18 +433,29 @@ Calibration, ten bins (bin, count, mean predicted, observed), from `training_run
 The ranking is good and the calibration is not: `pos_weight` of about 65 inflates every
 probability, so the observed rate sits far below the predicted one in every bin but the first, and
 the alert rate at the spec's 0.20 threshold is high. The lesson and REPORT.md should say so and
-use the threshold sweep the run record carries (`alert_table`, all on the test windows, all 39 of
-39 deteriorations caught at every threshold):
+use the threshold sweep the run record carries (`alert_table`, all on the test windows). "Caught"
+means an alert inside the 12-hour horizon the model was trained for (a positive window), so the
+lead time is at most 11 hours; the last column keeps the looser count the first run reported (any
+alert earlier in the stay), which a random scorer at the same alert rate also does well on. All 39
+of 39 test deteriorations are caught at every threshold by both definitions, so the sensitivity
+column does not separate the thresholds; the alert rate and the window precision do:
 
-| Threshold | Alerts per 100 patient-days | Median lead time (h) | Window precision |
-|---|---|---|---|
-| 0.20 | 159.71 | 15 | 0.2425 |
-| 0.35 | 124.68 | 14 | 0.3071 |
-| 0.50 | 103.50 | 13 | 0.3666 |
-| 0.70 | 72.88 | 13 | 0.5109 |
-| 0.80 | 61.15 | 13 | 0.6075 |
-| 0.90 | 51.44 | 11 | 0.7118 |
-| 0.95 | 46.41 | 11 | 0.7719 |
+| Threshold | Alerts per 100 patient-days | Caught (in horizon) | Median lead time (h) | Window precision | Median lead, any earlier alert (h) |
+|---|---|---|---|---|---|
+| 0.20 | 159.71 | 39/39 | 11 | 0.2425 | 15 |
+| 0.35 | 124.68 | 39/39 | 11 | 0.3071 | 14 |
+| 0.50 | 103.50 | 39/39 | 11 | 0.3666 | 13 |
+| 0.70 | 72.88 | 39/39 | 11 | 0.5109 | 13 |
+| 0.80 | 61.15 | 39/39 | 11 | 0.6075 | 13 |
+| 0.90 | 51.44 | 39/39 | 11 | 0.7118 | 11 |
+| 0.95 | 46.41 | 39/39 | 11 | 0.7719 | 11 |
+
+The 11-hour median at every threshold says the model alerts in the very first window of the
+horizon (onset minus 11 hours) for most of the 39 stays. The run record and `train.log` in
+`training/runs/2026-10-14-deterioration/` are from the rerun of 2026-10-14 12:10 UTC with the
+corrected `alert_metrics()`; seed 42 reproduced the identical `.onnx` (same sha256, same
+`model_version`), so only `trained_at`, the epoch timings, the lead-time fields and
+`artifact_json_sha256` differ from the first run, and `models/deterioration.json` was recopied.
 
 ### 10c. Other runs (reported by the GPU agent, not committed)
 
@@ -580,7 +591,7 @@ Ladder of proof through the Ingress, all on http://localhost:
 | 5 | `localhost/docs`, `localhost/openapi.json` | 200; the schema lists `/api/patients/{patient_id}/risk/readmission`, `.../risk/deterioration`, `.../summary` and `.../ai/history` |
 | 6 | `GET /api/integrations` as admin@riverside.example | RNC active, watermark 1,650, 0 deferred, 0 failed; RGH active |
 | 7 | `kubectl -n atlas logs deploy/worker --tail=5` | `applied batch of 500: {'processed': 497, 'deferred': 3}`, `applied batch of 398`, then batches of 7, 5 and 14 as events arrive |
-| 7 | env names inside the worker pod | `POSTGRES_PASSWORD`, `MERIDIAN_API_KEY`, `DATABASE_URL`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_URL` and no `JWT_SECRET` or `LLM_API_KEY` (least privilege, now six names) |
+| 7 | env names inside the worker pod | `POSTGRES_PASSWORD`, `MERIDIAN_API_KEY`, `DATABASE_URL` and no `JWT_SECRET`, `LLM_API_KEY`, `MONGO_USER`, `MONGO_PASSWORD` or `MONGO_URL` (least privilege, three names; this pass first gave the worker the three `MONGO_*` names too, removed in the review fix pass of section 16 because the worker never opens the store) |
 | AI | api pod log | `model readmission-20261011-870b90fb loaded`, `early-warning model deterioration-20261014-0877aaca loaded from /app/models/deterioration.onnx in 292 ms` on the first start (180 ms after the restart; 61 to 76 ms on Compose: the pod has a 500m CPU limit), no JWT warning (fresh secret) |
 | AI | `GET /api/patients/{199,35,403}/risk/deterioration` (the three oldest open DEMO inpatient stays in the cluster database) | 200 `scored` 0.0 low (hour 145, 22 hours of vitals) in 0.252 s; 0.029 low (hour 113, 18) in 0.235 s; 0.0 low (hour 89, 15) in 0.220 s; every answer `stored: true`, `as_of` on 2026-10-14 because this database was seeded today |
 | AI | `GET /api/patients/199/ai/history?feature=early-warning&limit=5` | `{items: [the score just written, state scored], stored: true}` |
@@ -606,3 +617,36 @@ onnx 1.23.2 and torch 2.6.0+cu124 (training only, in the CUDA venv; the api imag
 ruff 0.9.6 (the backend container's version, also installed into `.venv` to lint `training/`).
 kind, kubectl, kustomize, node image, ingress-nginx and Docker are the versions in section 7;
 the pinned `controller-v1.15.1` manifest URL applied cleanly in this pass.
+
+## 16. The review fix pass (2026-10-14, after commit 5b1b962)
+
+Twelve findings from the review of commit 5b1b962 (two of them reported twice under different
+lenses), each with what was done. No blockers; one major.
+
+| # | Finding (file) | Severity | Disposition |
+|---|---|---|---|
+| 1, 11 | Worker Deployment receives `MONGO_USER`, `MONGO_PASSWORD` and `MONGO_URL` it never uses; spec 6 fixes the worker to `POSTGRES_PASSWORD` and `MERIDIAN_API_KEY` (`k8s/base/worker.yaml`) | minor | Fixed. The three `env` entries and the sentence in the manifest's comment are gone; `docs/AI_STORE.md` (settings table) and section 14 row 7 above say so. The Compose worker still receives `MONGO_URL` from `docker-compose.yml`, as spec 12 says; only the cluster manifest is the least-privilege example. Live cluster after re-apply: `kubectl -n atlas get deploy worker -o jsonpath` lists `POSTGRES_PASSWORD MERIDIAN_API_KEY DATABASE_URL` and nothing else. |
+| 2 | `test_indexes_are_created_on_the_first_write...` drops the live `predictions` indexes (TTL included) on the shared Compose store (`backend/tests/test_ai_store.py`) | minor | Fixed. A `scratch_store` fixture swaps `ai_store.db()` for the database `atlas_ai_test` on the same server (settings are a frozen dataclass, so the module function is patched, as `store_down` patches `_mongo_url`), the test drops indexes and inserts there, and the fixture drops the database afterwards. `atlas_ai` is never touched. |
+| 3 | Encounter-level sensitivity and lead time count alerts anywhere in the stay, so 39/39 is nearly model-independent (`training/train_deterioration.py`) | minor | Fixed. `alert_metrics()` now counts a deterioration as caught only when an alert falls in a positive window (onset minus as-of under 12 hours) and takes the lead time from the first such alert; `caught_encounters_any_hour` and `median_lead_time_hours_any_hour` keep the old definition for comparison. Retrained with the same command (section 10b): identical `.onnx` (sha256 `5872e653...`, same `model_version`), median lead 11.0 h instead of 15.0 h at 0.20, still 39/39 at every threshold by both definitions; `training_run.json`, `train.log`, `deterioration.json` and `models/deterioration.json` replaced. Section 10b and the README gap say that the sensitivity column does not separate thresholds. |
+| 4, 12 | `band` from the rounded probability, `alert` from the unrounded one (`backend/app/routers/early_warning.py`) | minor | Fixed. `assess()` rounds to three decimals once and decides `alert` on the rounded value; the router no longer rounds. New test `test_scored_probability_is_rounded_before_the_alert_decision`. |
+| 5 | `hours_of_vitals` can exceed `hours_admitted` in the first hour of a stay (`backend/app/ml_deterioration.py`) | minor | Fixed. `hourly_grid()` accepts zero hours and returns an empty grid, so a stay younger than one hour reports `hours_admitted 0, hours_of_vitals 0`. New test `test_first_hour_of_a_stay_counts_no_vitals_hour`. |
+| 6 | Scored card calls a class-weighted score a "chance" and flags low confidence only for the medium band (`frontend/src/panels/EarlyWarningCard.jsx`) | minor | Fixed. The sentence now reads "Model score for ... The score ranks patients; it is not the observed chance", and the low-confidence note shows for every scored probability under `CALIBRATED_FROM = 0.9` (the only bin whose observed rate, 0.712, came close to its mean prediction) and quotes the under-6-percent observed rates. The README gap bullet says the same. |
+| 7 | Task 4 probe check reads commented-out YAML as a real probe (`scripts/check_submission.py`) | major | Fixed. `strip_comments()` removes comment lines before every text search (probes, `:latest`), the probe regex wants an indented key, and when `kubectl kustomize` renders, the Deployments are read from the rendered output ("kustomize output" in the detail) instead of the source files. Verified on a scratch copy with the api `readinessProbe` block commented out: kustomize renders 17 objects, `FAIL Deployment api has readiness and liveness probes (kustomize output: missing readiness)`; the earlier text search passed it. |
+| 8 | Artifact-hash check lets one artifact vouch for two runs and ignores `artifact_file` | minor | Fixed. `artifact_for()` hashes `models/<artifact_file>` (bare name only), falls back to the `.onnx` for `deterioration_12h` or to a hash match among `.joblib`/`.pkl`/`.pt` for the student's model, and a second run resolving to the same file fails ("is already the artifact of ..."). The `trained_on: ec2` PASS now says the claim is checked from the screenshots, not here. Verified: a scratch repo whose GPU run points at `readmission.joblib` gets `FAIL ... models/readmission.joblib is already the artifact of training/runs/2026-10-11/training_run.json`. `scripts/README.md` updated. |
+| 9 | Task 3 never requires `stored: true` on a healthy store | minor | Fixed. `check_history()` also requires `stored: true` on the score it just fetched (detail shows both flags), and the two Task 2 route checks print `stored`. |
+| 10 | Any git failure other than "untracked" counted as "secret.env absent from git" | minor | Fixed. Exit 1 is "not tracked" (PASS), 0 is "tracked" (FAIL), anything else is a WARN with git's last line. Verified: a scratch folder without `.git` now prints `WARN k8s/secret.env is not committed (git exited 128: fatal: not a git repository ...)`. |
+
+Measurements in this pass:
+
+| What | Result |
+|---|---|
+| `docker compose up -d --build backend worker` after the backend change | backend healthy, worker started; `docker compose exec -T backend pytest -q` 72 passed (70 before plus the two new early-warning tests), exit 0; `ruff check app tests` clean; `ruff check --config backend/ruff.toml training evals scripts` clean |
+| `docker compose exec -T frontend npx vite build` | built in 4.67 s, `index-*.js` 792.78 kB (unchanged size class) |
+| Retraining (`carescribe` venv, RTX 4090, same command as 10b) | 38.1 s wall, fit 25.0 s, 21 epochs, best 15 (validation AP 0.8772), one epoch cpu 5.63 s / cuda 0.6 s; `check_onnx.py` max gap 2.88e-05 OK |
+| `check_submission.py --task 2` (Compose) | 16 passed, 2 warnings (`trained_on: local` twice), 0 failed |
+| `check_submission.py --task 3` (Compose, one real summary: 420+147 tokens, 2,874 ms; evals 10/10, 21,635 tokens) | 11 passed, 0 warnings, 0 failed |
+| Images | `atlas-api`, `atlas-web`, `atlas-meridian` rebuilt as `sha-5b1b962` (the commit under review; `kustomization.yaml` `newTag` set to it) and loaded into kind |
+| `kubectl -n atlas delete job atlas-seed; kubectl apply -k k8s/base` | api, web, worker, meridian re-rolled, StatefulSet `configured` without a restart (`mongo-0` 37 min old afterwards), seed Job re-created and `Completed`; `rollout status` for the four Deployments all succeeded within about 30 s; the worker logged `Meridian unreachable` for a few seconds while meridian's new pod started, then resumed |
+| `scripts/smoke.py --base http://localhost` | `smoke ok` (stay summary skipped: no key in the cluster Secret) |
+| `check_submission.py --task 4 --base http://localhost` | 15 passed, 0 warnings, 0 failed; the probe lines now read `(kustomize output)` |
+| `GET /api/patients/199/risk/deterioration` through the Ingress | 200 `scored` 0.0 low, hour 145, 22 hours of vitals, `trained_at 2026-10-14T12:10:45Z` (the rerun's card), `stored: true` |

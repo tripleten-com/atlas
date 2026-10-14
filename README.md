@@ -262,6 +262,14 @@ What the reference does not do, so you know where the edges are:
   and, at the 0.20 alert threshold, about 160 alerts per 100 patient-days on the test windows.
   The `alert_table` in the run record gives the trade-off at other thresholds; pick one and defend
   it in REPORT.md. The mask channel also encodes nursing cadence (`--no-mask` measures that).
+  Because of the inflation, the card calls the number a model score, not a chance, and shows its
+  low-confidence note for every score under 0.9 (the only calibration bin whose observed rate came
+  close to its score).
+- The early-warning run record counts a deterioration as caught only when an alert falls inside
+  the 12-hour horizon (`caught_encounters`, `median_lead_time_hours`), and keeps the looser
+  any-earlier-alert count beside it (`caught_encounters_any_hour`). On the reference seed every
+  threshold in `alert_table` catches all 39 test deteriorations by both definitions, so that
+  column does not help you choose a threshold; the alert rate and the window precision do.
 - The early-warning window ends at the hour after the stay's latest vitals measurement, not at
   the wall clock, because the Test Facility is frozen on its seed day; the response's `as_of`
   says which hour was scored.

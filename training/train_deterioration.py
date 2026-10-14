@@ -308,22 +308,29 @@ def alert_metrics(split: dict, y_prob: np.ndarray, stride: int, threshold: float
     and how early.
 
     Patient-days are the hours the windows stand for (one window = `stride` hours) over 24. A
-    deterioration is "caught" when at least one window of that stay alerts before the onset
-    (every kept window is before or at the onset); lead time is onset minus the first alerting
-    as-of hour, so it can exceed the 12-hour horizon when the model worried early."""
+    deterioration is "caught" when a window of that stay alerts inside the 12-hour horizon the
+    model was trained for (onset minus as-of hour under HORIZON_HOURS, that is a positive
+    window); lead time is onset minus the first such alerting as-of hour, so it is at most 12.
+    An alert earlier in the stay is a false alarm by the model's own definition, so it does
+    not count as catching the onset; `caught_encounters_any_hour` and
+    `median_lead_time_hours_any_hour` keep the looser count (any alert before the onset) for
+    comparison, because a random scorer with the same alert rate "catches" most stays by it."""
     alerts = y_prob >= threshold
     patient_days = len(y_prob) * stride / 24.0
+    positives = split["label"] == 1
     frame = pd.DataFrame({
         "encounter_id": split["encounter_id"],
         "as_of_hour": split["as_of_hour"],
         "onset_hour": split["onset_hour"],
         "alert": alerts,
+        "alert_in_horizon": alerts & positives,
     })
     onset_stays = frame[frame["onset_hour"] >= 0]
-    caught = onset_stays[onset_stays["alert"]].groupby("encounter_id")["as_of_hour"].min()
     onset_of = onset_stays.groupby("encounter_id")["onset_hour"].first()
+    caught = onset_stays[onset_stays["alert_in_horizon"]].groupby("encounter_id")["as_of_hour"].min()
+    caught_any = onset_stays[onset_stays["alert"]].groupby("encounter_id")["as_of_hour"].min()
     lead_times = (onset_of.loc[caught.index] - caught).to_numpy(dtype=float)
-    positives = split["label"] == 1
+    lead_times_any = (onset_of.loc[caught_any.index] - caught_any).to_numpy(dtype=float)
     return {
         "alert_threshold": threshold,
         "alerts": int(alerts.sum()),
@@ -335,6 +342,8 @@ def alert_metrics(split: dict, y_prob: np.ndarray, stride: int, threshold: float
         "window_recall_at_threshold": round(float(alerts[positives].mean()), 4) if positives.any() else None,
         "window_precision_at_threshold": round(float(positives[alerts].mean()), 4) if alerts.any() else None,
         "median_lead_time_hours": round(float(np.median(lead_times)), 1) if len(lead_times) else None,
+        "caught_encounters_any_hour": int(caught_any.shape[0]),
+        "median_lead_time_hours_any_hour": round(float(np.median(lead_times_any)), 1) if len(lead_times_any) else None,
     }
 
 
@@ -508,14 +517,17 @@ def main() -> None:
         print(f"  {row['lower']:.1f}-{row['upper']:.1f}  {row['count']:6d}  {predicted}  {observed}")
     print(f"alerts at threshold {ALERT_THRESHOLD}: {alerts['alerts']} over {alerts['patient_days']} patient-days = "
           f"{alerts['alerts_per_100_patient_days']} per 100 patient-days; "
-          f"caught {alerts['caught_encounters']} of {alerts['onset_encounters']} deteriorations "
-          f"(sensitivity {alerts['sensitivity_at_threshold']}), median lead time {alerts['median_lead_time_hours']} h; "
+          f"caught {alerts['caught_encounters']} of {alerts['onset_encounters']} deteriorations inside the 12-hour horizon "
+          f"(sensitivity {alerts['sensitivity_at_threshold']}), median lead time {alerts['median_lead_time_hours']} h "
+          f"({alerts['caught_encounters_any_hour']} caught counting any earlier alert, median lead {alerts['median_lead_time_hours_any_hour']} h); "
           f"window recall {alerts['window_recall_at_threshold']}, window precision {alerts['window_precision_at_threshold']}")
     table = alert_table(test, test_prob, args.stride)
-    print("alert-rate and lead-time table (threshold, alerts per 100 patient-days, caught/onsets, median lead h, window precision):")
+    print("alert-rate and lead-time table (threshold, alerts per 100 patient-days, caught/onsets inside the horizon, "
+          "median lead h, window precision, caught/onsets counting any earlier alert):")
     for row in table:
         print(f"  {row['alert_threshold']:.2f}  {row['alerts_per_100_patient_days']:7.2f}  {row['caught_encounters']:3d}/{row['onset_encounters']:<3d}  "
-              f"{row['median_lead_time_hours']!s:>5}  {row['window_precision_at_threshold']}")
+              f"{row['median_lead_time_hours']!s:>5}  {row['window_precision_at_threshold']}  "
+              f"{row['caught_encounters_any_hour']:3d}/{row['onset_encounters']:<3d}")
 
     # ---- artifacts
     model_version = f"deterioration-{trained_at:%Y%m%d}-{data_sha[:8]}"

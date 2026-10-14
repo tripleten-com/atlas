@@ -2,7 +2,7 @@
   "model": "deterioration_12h",
   "question": "deterioration_12h",
   "model_version": "deterioration-20261014-0877aaca",
-  "trained_at": "2026-10-14T10:57:06.401685+00:00",
+  "trained_at": "2026-10-14T12:10:45.865367+00:00",
   "trained_on": "local",
   "instance_hint": null,
   "device": "cuda",
@@ -52,8 +52,8 @@
   "best_epoch": 15,
   "stopped_by": "patience",
   "epoch_seconds": {
-    "cpu": 8.09,
-    "cuda": 0.65
+    "cpu": 5.63,
+    "cuda": 0.6
   },
   "train_metrics": {
     "auroc": 0.9985,
@@ -140,7 +140,7 @@
   "alert_threshold": 0.2,
   "alerts_per_100_patient_days": 159.71,
   "sensitivity_at_threshold": 1.0,
-  "median_lead_time_hours": 15.0,
+  "median_lead_time_hours": 11.0,
   "alert_detail": {
     "alert_threshold": 0.2,
     "alerts": 1810,
@@ -151,7 +151,9 @@
     "sensitivity_at_threshold": 1.0,
     "window_recall_at_threshold": 0.94,
     "window_precision_at_threshold": 0.2425,
-    "median_lead_time_hours": 15.0
+    "median_lead_time_hours": 11.0,
+    "caught_encounters_any_hour": 39,
+    "median_lead_time_hours_any_hour": 15.0
   },
   "alert_table": [
     {
@@ -164,7 +166,9 @@
       "sensitivity_at_threshold": 1.0,
       "window_recall_at_threshold": 0.94,
       "window_precision_at_threshold": 0.2425,
-      "median_lead_time_hours": 15.0
+      "median_lead_time_hours": 11.0,
+      "caught_encounters_any_hour": 39,
+      "median_lead_time_hours_any_hour": 15.0
     },
     {
       "alert_threshold": 0.35,
@@ -176,7 +180,9 @@
       "sensitivity_at_threshold": 1.0,
       "window_recall_at_threshold": 0.9293,
       "window_precision_at_threshold": 0.3071,
-      "median_lead_time_hours": 14.0
+      "median_lead_time_hours": 11.0,
+      "caught_encounters_any_hour": 39,
+      "median_lead_time_hours_any_hour": 14.0
     },
     {
       "alert_threshold": 0.5,
@@ -188,7 +194,9 @@
       "sensitivity_at_threshold": 1.0,
       "window_recall_at_threshold": 0.9208,
       "window_precision_at_threshold": 0.3666,
-      "median_lead_time_hours": 13.0
+      "median_lead_time_hours": 11.0,
+      "caught_encounters_any_hour": 39,
+      "median_lead_time_hours_any_hour": 13.0
     },
     {
       "alert_threshold": 0.7,
@@ -200,7 +208,9 @@
       "sensitivity_at_threshold": 1.0,
       "window_recall_at_threshold": 0.9036,
       "window_precision_at_threshold": 0.5109,
-      "median_lead_time_hours": 13.0
+      "median_lead_time_hours": 11.0,
+      "caught_encounters_any_hour": 39,
+      "median_lead_time_hours_any_hour": 13.0
     },
     {
       "alert_threshold": 0.8,
@@ -212,7 +222,9 @@
       "sensitivity_at_threshold": 1.0,
       "window_recall_at_threshold": 0.9015,
       "window_precision_at_threshold": 0.6075,
-      "median_lead_time_hours": 13.0
+      "median_lead_time_hours": 11.0,
+      "caught_encounters_any_hour": 39,
+      "median_lead_time_hours_any_hour": 13.0
     },
     {
       "alert_threshold": 0.9,
@@ -224,7 +236,9 @@
       "sensitivity_at_threshold": 1.0,
       "window_recall_at_threshold": 0.8887,
       "window_precision_at_threshold": 0.7118,
-      "median_lead_time_hours": 11.0
+      "median_lead_time_hours": 11.0,
+      "caught_encounters_any_hour": 39,
+      "median_lead_time_hours_any_hour": 11.0
     },
     {
       "alert_threshold": 0.95,
@@ -236,11 +250,13 @@
       "sensitivity_at_threshold": 1.0,
       "window_recall_at_threshold": 0.8694,
       "window_precision_at_threshold": 0.7719,
-      "median_lead_time_hours": 11.0
+      "median_lead_time_hours": 11.0,
+      "caught_encounters_any_hour": 39,
+      "median_lead_time_hours_any_hour": 11.0
     }
   ],
   "artifact_file": "deterioration.onnx",
   "artifact_sha256": "5872e65386e45bacd355df8bb2b601158167753d9ca7d26f3f971cbf12fc476c",
   "artifact_json_file": "deterioration.json",
-  "artifact_json_sha256": "a647b31236830d799af884c1fd39d795bc2c3434527de152c9ef415ed77b0eef"
+  "artifact_json_sha256": "26b460fa611c540853ed37b50544f09f3e0ca083f96682f0bc688f65dab8130b"
 }

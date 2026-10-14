@@ -32,10 +32,11 @@ spec:
           envFrom:
             - configMapRef:
                 name: atlas-config
-          # Least privilege: the worker talks to Postgres, Meridian and the document store, so it
-          # gets only those keys from the Secret. It never signs a token or calls the language
-          # model, so it does not see JWT_SECRET or LLM_API_KEY (compare api.yaml, which needs
-          # all six).
+          # Least privilege: the worker talks to Postgres and Meridian, so it gets only those two
+          # keys from the Secret. It never signs a token, calls the language model or writes to
+          # the document store, so it does not see JWT_SECRET, LLM_API_KEY, MONGO_USER or
+          # MONGO_PASSWORD (compare api.yaml, which needs all six). If a worker feature ever
+          # writes to the store, add the two MONGO_* secretKeyRefs here and nowhere else.
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
@@ -49,18 +50,6 @@ spec:
                   key: MERIDIAN_API_KEY
             - name: DATABASE_URL
               value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)
-            - name: MONGO_USER
-              valueFrom:
-                secretKeyRef:
-                  name: atlas-secrets
-                  key: MONGO_USER
-            - name: MONGO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: atlas-secrets
-                  key: MONGO_PASSWORD
-            - name: MONGO_URL
-              value: mongodb://$(MONGO_USER):$(MONGO_PASSWORD)@mongo:27017/atlas_ai?authSource=admin
           # The same shell test twice: a heartbeat file younger than 120 seconds. Readiness has
           # no initial delay and fails quietly until the first loop; liveness waits a minute first,
           # because a restart is the wrong answer to "still waiting for the seed Job".

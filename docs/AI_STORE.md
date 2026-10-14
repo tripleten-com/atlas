@@ -57,7 +57,7 @@ their result from the history route, and "history unavailable" when `stored` is 
 
 | Variable | Compose | Cluster |
 |---|---|---|
-| `MONGO_URL` | built in `docker-compose.yml` from `MONGO_USER`, `MONGO_PASSWORD`, `AI_STORE_DB`: `mongodb://<user>:<password>@mongo:27017/atlas_ai?authSource=admin` | built in `api.yaml` and `worker.yaml` from the Secret keys `MONGO_USER` and `MONGO_PASSWORD` |
+| `MONGO_URL` | built in `docker-compose.yml` from `MONGO_USER`, `MONGO_PASSWORD`, `AI_STORE_DB`: `mongodb://<user>:<password>@mongo:27017/atlas_ai?authSource=admin` (the backend and the worker both receive it, though only the API writes) | built in `api.yaml` only, from the Secret keys `MONGO_USER` and `MONGO_PASSWORD`; the worker never opens the store, so `worker.yaml` does not get them (least privilege) |
 | `AI_STORE_DB` | `atlas_ai` (`.env`) | `atlas_ai` (ConfigMap) |
 | `AI_STORE_PREDICTION_TTL_DAYS` | `90` (`.env`) | `90` (ConfigMap) |
 | `MONGO_USER`, `MONGO_PASSWORD` | `.env` (dev placeholders in `.env.example`) | Secret `atlas-secrets` (template in `k8s/base/secret.example.env`) |

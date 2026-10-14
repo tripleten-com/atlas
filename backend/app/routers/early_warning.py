@@ -57,9 +57,7 @@ def deterioration_risk(
 
     rows = ml_deterioration.vitals_rows(conn, user, encounter["encounter_id"])
     answer = ml_deterioration.assess(encounter, rows, model)
-    probability = answer["probability"]
-    if probability is not None:
-        probability = round(probability, 3)
+    probability = answer["probability"]  # already rounded to 3 decimals; alert was decided on this value
     band = ml.band(probability) if probability is not None else None
 
     elapsed_ms = int((time.monotonic() - started) * 1000)

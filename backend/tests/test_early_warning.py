@@ -221,6 +221,29 @@ def test_young_stay_is_insufficient_data():
     assert answer["hours_of_vitals"] == 0
 
 
+def test_first_hour_of_a_stay_counts_no_vitals_hour():
+    """A stay 20 minutes old with one set of vitals: hour 0 has not finished, so hours_admitted is
+    0 and hours_of_vitals must be 0 too (never more than hours_admitted)."""
+    model = ml_deterioration.load_model()
+    admit = datetime(2026, 1, 1, 8, 0, tzinfo=timezone.utc)
+    answer = ml_deterioration.assess(_encounter(admit), _normal_rows(admit, 1), model, now=admit + timedelta(minutes=20))
+    assert answer["state"] == "insufficient_data"
+    assert answer["hours_admitted"] == 0
+    assert answer["hours_of_vitals"] == 0
+    assert answer["hours_of_vitals"] <= answer["hours_admitted"]
+
+
+def test_scored_probability_is_rounded_before_the_alert_decision():
+    """The response, the stored document and the alert flag must agree, so assess() rounds the
+    probability to three decimals and decides the alert on the rounded value."""
+    model = ml_deterioration.load_model()
+    admit = datetime(2026, 1, 1, 8, 0, tzinfo=timezone.utc)
+    answer = ml_deterioration.assess(_encounter(admit), _normal_rows(admit, 36), model, now=admit + timedelta(hours=40))
+    assert answer["state"] == "scored"
+    assert answer["probability"] == round(answer["probability"], 3)
+    assert answer["alert"] == (answer["probability"] >= model["alert_threshold"])
+
+
 def test_clinical_clock_follows_the_latest_measurement():
     """Vitals stop at hour 40 while the wall clock says hour 300 (a frozen Test Facility stay):
     the window ends at hour 41, so the model reads the last 24 hours of data, not 24 empty hours."""

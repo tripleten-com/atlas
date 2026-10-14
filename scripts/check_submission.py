@@ -254,17 +254,30 @@ def check_run_evidence(report: Report, repo: Path, runs: list[tuple[Path, dict]]
     report.check("training_run.json for the early-warning model (model: deterioration_12h)",
                  bool(gpu_runs), ", ".join(rel(repo, p) for p, r in gpu_runs) or "none found")
 
-    # The committed artifact is whichever file in models/ hashes to artifact_sha256: the name is
-    # the student's, the hash is the proof.
-    hashes = {sha256_of(f): f.name for f in repo.glob("models/*") if f.suffix in (".joblib", ".onnx", ".pkl", ".pt")}
+    # The committed artifact is the file in models/ the run names (`artifact_file`); a run without
+    # that field falls back to the .onnx for the early-warning model, or to whichever file hashes
+    # to artifact_sha256 for the student's own model (the name is theirs, the hash is the proof).
+    # Two runs may not point at the same file: one artifact cannot vouch for two trainings.
+    claimed: dict[str, str] = {}
     for path, record in question_runs + gpu_runs:
         expected = str(record.get("artifact_sha256", "")).lower()
-        found = hashes.get(expected)
-        report.check(f"committed artifact matches artifact_sha256 in {rel(repo, path)}", found is not None,
-                     f"models/{found}" if found else f"no file in models/ has sha256 {expected[:12]}...")
+        artifact = artifact_for(repo, record, expected)
+        actual = sha256_of(artifact) if artifact and artifact.exists() else ""
+        label = f"committed artifact matches artifact_sha256 in {rel(repo, path)}"
+        if artifact is None or not artifact.exists():
+            report.check(label, False, f"no file in models/ for this run (artifact_file {record.get('artifact_file')!r}, "
+                                       f"sha256 {expected[:12]}...)")
+        elif actual != expected:
+            report.check(label, False, f"{rel(repo, artifact)} has sha256 {actual[:12]}..., the run says {expected[:12]}...")
+        elif actual in claimed:
+            report.check(label, False, f"{rel(repo, artifact)} is already the artifact of {claimed[actual]}")
+        else:
+            claimed[actual] = rel(repo, path)
+            report.check(label, True, rel(repo, artifact))
         trained_on = record.get("trained_on")
         if trained_on == "ec2":
-            report.check(f"trained on AWS ({rel(repo, path)})", True, f"instance {record.get('instance_hint')}")
+            report.check(f"trained on AWS ({rel(repo, path)})", True,
+                         f"instance {record.get('instance_hint')}; the claim itself is checked from the screenshots, not here")
         elif trained_on == "local":
             report.warn(f"trained on AWS ({rel(repo, path)})", "trained_on is local: the cutline, reported not failed")
         else:
@@ -273,6 +286,21 @@ def check_run_evidence(report: Report, repo: Path, runs: list[tuple[Path, dict]]
 
     for path, record in gpu_runs:
         check_gpu_timing(report, repo, path, record)
+
+
+def artifact_for(repo: Path, record: dict, expected_sha256: str) -> Path | None:
+    """The models/ file a run record stands for (see check_run_evidence for the three rules)."""
+    models = repo / "models"
+    named = record.get("artifact_file")
+    if named:
+        return models / Path(str(named)).name  # the run writes a bare file name; never walk out of models/
+    if record.get("model") == "deterioration_12h":
+        onnx = sorted(models.glob("*.onnx"))
+        return onnx[0] if onnx else None
+    for candidate in sorted(models.glob("*")):
+        if candidate.suffix in (".joblib", ".pkl", ".pt") and sha256_of(candidate) == expected_sha256:
+            return candidate
+    return None
 
 
 def check_metrics(report: Report, repo: Path, path: Path, record: dict) -> None:
@@ -333,7 +361,8 @@ def check_route_answers(report: Report, atlas: Atlas) -> None:
     label = "readmission route scores a Test Facility patient"
     if risk is not None:
         ok = 0.0 <= risk["probability"] <= 1.0 and risk["band"] in ("low", "medium", "high")
-        report.check(label, ok, f"patient {patient_id}: {risk['probability']} {risk['band']}, {risk['model_version']}, outcome {risk['outcome']}")
+        report.check(label, ok, f"patient {patient_id}: {risk['probability']} {risk['band']}, {risk['model_version']}, "
+                                f"outcome {risk['outcome']}, stored {risk.get('stored', '?')}")
     elif "503" in last or "not applicable" in last:
         report.warn(label, f"documented answer only, no score: {last}")
     else:
@@ -346,7 +375,8 @@ def check_route_answers(report: Report, atlas: Atlas) -> None:
         ok = state in ("scored", "insufficient_data", "deteriorating")
         if state == "scored":
             ok = ok and warning["probability"] is not None and 0.0 <= warning["probability"] <= 1.0 and warning["band"] in ("low", "medium", "high")
-        report.check(label, ok, f"patient {patient_id}: state {state}, probability {warning['probability']}, {warning['model_version']}")
+        report.check(label, ok, f"patient {patient_id}: state {state}, probability {warning['probability']}, {warning['model_version']}, "
+                                f"stored {warning.get('stored', '?')}")
     elif "503" in last or "not applicable" in last:
         report.warn(label, f"documented answer only, no score: {last}")
     else:
@@ -471,8 +501,12 @@ def check_history(report: Report, atlas: Atlas) -> int | None:
         fresh = datetime.now(UTC) - created < timedelta(minutes=5)
     matches = (newest.get("feature") == "readmission-risk" and newest.get("model_version") == risk["model_version"]
                and newest.get("probability") is not None and abs(newest["probability"] - risk["probability"]) < 1e-6)
-    report.check("ai/history returns the prediction just written", status == 200 and history.get("stored") is True and matches and fresh,
-                 f"HTTP {status}, stored {history.get('stored', '?')}, {len(history.get('items', []))} items, newest {newest.get('created_at', '-')}")
+    # `stored: true` on the score itself is part of the contract (spec 12): a route that writes the
+    # document but reports false, or reports true without writing, fails here.
+    report.check("ai/history returns the prediction just written",
+                 status == 200 and risk.get("stored") is True and history.get("stored") is True and matches and fresh,
+                 f"HTTP {status}, score stored {risk.get('stored', '?')}, history stored {history.get('stored', '?')}, "
+                 f"{len(history.get('items', []))} items, newest {newest.get('created_at', '-')}")
 
     status, body = atlas.get(HISTORY.format(patient_id) + "?feature=readmission-risk", atlas.other_tenant)
     report.check("ai/history answers 404 for the other tenant", status == 404, f"HTTP {status} {detail_of(body)}")
@@ -569,10 +603,19 @@ def task3(report: Report, repo: Path, atlas: Atlas, args: argparse.Namespace) ->
 
 # ================================================================ Task 4
 
+def strip_comments(text: str) -> str:
+    """Drop every comment line. The checks below are text searches, so a commented-out
+    `readinessProbe:` (or a header comment that mentions one) must not count as a probe."""
+    return re.sub(r"(?m)^\s*#.*\n?", "", text)
+
+
+def split_documents(text: str) -> list[str]:
+    return [doc for doc in re.split(r"(?m)^---\s*$", strip_comments(text)) if doc.strip()]
+
+
 def yaml_documents(path: Path) -> list[str]:
-    """Split a manifest file into documents. The checks are text searches, so no YAML parser."""
-    text = path.read_text(encoding="utf-8", errors="replace")
-    return [doc for doc in re.split(r"(?m)^---\s*$", text) if doc.strip()]
+    """Split a manifest file into documents, comments removed. No YAML parser: standard library only."""
+    return split_documents(path.read_text(encoding="utf-8", errors="replace"))
 
 
 def doc_kind_and_name(doc: str) -> tuple[str, str]:
@@ -594,21 +637,27 @@ def check_manifests(report: Report, repo: Path) -> None:
     else:
         report.check(label, code == 0, f"{rendered.count('kind:')} objects" if code == 0 else last_line(rendered))
 
-    docs = [(path, *doc_kind_and_name(doc), doc) for path in manifests for doc in yaml_documents(path)]
-    for path, kind, name, doc in docs:
+    # The probe checks read what the cluster would get: the rendered output when kustomize ran,
+    # otherwise the source files with their comments removed (a Deployment split over two files
+    # or patched by an overlay is only complete after rendering).
+    if rendered and code == 0:
+        docs = [("kustomize output", *doc_kind_and_name(doc), doc) for doc in split_documents(rendered)]
+    else:
+        docs = [(path.name, *doc_kind_and_name(doc), doc) for path in manifests for doc in yaml_documents(path)]
+    for source, kind, name, doc in docs:
         if kind != "Deployment":
             continue
-        has = {probe: f"{probe}Probe:" in doc for probe in ("readiness", "liveness")}
+        has = {probe: re.search(rf"(?m)^\s+{probe}Probe:", doc) is not None for probe in ("readiness", "liveness")}
         report.check(f"Deployment {name} has readiness and liveness probes", all(has.values()),
-                     f"{path.name}: missing {', '.join(k for k, v in has.items() if not v)}" if not all(has.values()) else path.name)
+                     f"{source}: missing {', '.join(k for k, v in has.items() if not v)}" if not all(has.values()) else source)
         if name == "api":
-            report.check("Deployment api has a startup probe", "startupProbe:" in doc, path.name)
+            report.check("Deployment api has a startup probe", re.search(r"(?m)^\s+startupProbe:", doc) is not None, source)
     if not any(kind == "Deployment" and name == "api" for _, kind, name, _ in docs):
         report.check("Deployment api has a startup probe", False, "no Deployment named api")
 
-    # an `image: name:latest` line, or a kustomize `newTag: latest`
+    # an `image: name:latest` line, or a kustomize `newTag: latest` (comments do not count)
     latest = re.compile(r"(?m)^\s*(?:-\s+)?image:\s*\S+:latest\b|^\s*newTag:\s*latest\b")
-    offenders = [path.name for path in manifests if latest.search(path.read_text(encoding="utf-8", errors="replace"))]
+    offenders = [path.name for path in manifests if latest.search(strip_comments(path.read_text(encoding="utf-8", errors="replace")))]
     if rendered and re.search(r"(?m)^\s*image:\s*\S+:latest\b", rendered):
         offenders.append("rendered output")
     report.check("no manifest uses :latest", not offenders, ", ".join(offenders) or f"{len(manifests)} files")
@@ -625,11 +674,15 @@ def check_manifests(report: Report, repo: Path) -> None:
 
 def check_secret_handling(report: Report, repo: Path) -> None:
     label = "k8s/secret.env is not committed"
+    # git exits 0 when the path is tracked, 1 when it is not, and 128 for "not a git repository"
+    # or a bad path: only 1 is the answer we want, anything else is reported, not passed.
     code, output = run(["git", "ls-files", "--error-unmatch", "k8s/secret.env"], repo, timeout=60)
     if code == -1:
         report.warn(label, "git is not installed")
+    elif code in (0, 1):
+        report.check(label, code == 1, "tracked by git!" if code == 0 else "absent from git")
     else:
-        report.check(label, code != 0, "tracked by git!" if code == 0 else "absent from git")
+        report.warn(label, f"git exited {code}: {last_line(output)}")
 
     example = repo / "k8s" / "base" / "secret.example.env"
     values = read_env_values(example, SECRET_KEYS)

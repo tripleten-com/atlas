@@ -39,8 +39,11 @@ and `clinician@harborview.example` in the other organisation) and the demo admin
   one with `model: deterioration_12h` (the early-warning model). Each must carry `metrics` with
   `auroc`, `average_precision` and `brier`, `train_metrics.auroc`, and a `calibration` list of
   exactly ten bins.
-- `models/`: some file there (`.joblib`, `.onnx`) must hash to each record's `artifact_sha256`.
-  The file name is yours; the hash is the proof the committed artifact is the one you trained.
+- `models/`: the file each record names in `artifact_file` must hash to its `artifact_sha256`
+  (a record without that field falls back to the `.onnx` for the early-warning model, or to any
+  `.joblib`/`.pkl`/`.pt` with the right hash for your own model). The file name is yours; the hash
+  is the proof the committed artifact is the one you trained. Two records may not point at the
+  same file. `trained_on: ec2` is taken at its word here; the reviewer checks the screenshots.
 - `trained_on`: `ec2` passes; `local` is a `WARN` (the cutline for a failed Codio session, reported
   not failed); anything else fails.
 - The GPU run: `gpu_name` must be set and `epoch_seconds.cuda` below `epoch_seconds.cpu` (run

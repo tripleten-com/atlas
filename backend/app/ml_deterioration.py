@@ -191,8 +191,9 @@ def hour_index(recorded_at: datetime, admit_date: datetime) -> int:
 
 def hourly_grid(rows: list[tuple], admit_date: datetime, hours: int) -> np.ndarray:
     """One stay's vitals on an hourly grid [hours, 6], NaN where nothing was measured. Several
-    measurements of one vital in the same hour are averaged."""
-    hours = max(int(hours), 1)
+    measurements of one vital in the same hour are averaged. Zero hours (a stay younger than one
+    hour) gives an empty grid, so hours_of_vitals can never exceed hours_admitted."""
+    hours = max(int(hours), 0)
     total = np.zeros((hours, len(VITALS)), dtype=np.float64)
     count = np.zeros((hours, len(VITALS)), dtype=np.float64)
     column = {name: i for i, name in enumerate(VITALS)}
@@ -326,7 +327,9 @@ def assess(encounter: dict, rows: list[tuple], model: dict, now: datetime | None
     values, mask = build_window(grid, as_of_hour)
     static = static_features(encounter["age"], encounter["sex"], encounter["admission_type"], as_of_hour)
     sequence, static_in = standardise(values, mask, static, model["card"], model["use_mask"])
-    probability = predict_probability(model, sequence, static_in)
+    # Round once, here, so the response, the stored document and the alert decision all see the
+    # same number: a raw 0.1996 would otherwise be shown as 0.2 next to "no alert" at a 0.20 line.
+    probability = round(predict_probability(model, sequence, static_in), 3)
     answer.update(
         state=SCORED,
         probability=probability,
