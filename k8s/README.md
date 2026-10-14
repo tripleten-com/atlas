@@ -12,10 +12,11 @@ k8s/
 │   ├── configmap.yaml      ConfigMap atlas-config (non-secret settings)
 │   ├── secret.example.env  the keys the Secret needs; copy to k8s/secret.env (gitignored)
 │   ├── postgres.yaml       PVC pgdata, Deployment db, Service db
+│   ├── mongo.yaml          StatefulSet mongo (Pod mongo-0, its own PVC), headless Service mongo
 │   ├── meridian.yaml       PVC meridian-data, Deployment meridian, Service meridian
 │   ├── seed-job.yaml       Job atlas-seed: migrations and the Test Facility, once
 │   ├── api.yaml            Deployment api (2 replicas, three probes), Service api
-│   ├── worker.yaml         Deployment worker (1 replica, heartbeat liveness)
+│   ├── worker.yaml         Deployment worker (1 replica, heartbeat readiness and liveness)
 │   ├── web.yaml            Deployment web (2 replicas, nginx), Service web
 │   ├── ingress.yaml        Ingress atlas: / to web; /api /health /docs /openapi.json to api
 │   └── kustomization.yaml  the list above plus the image tag
@@ -25,8 +26,9 @@ k8s/
 
 ## Prerequisites
 
-- Docker Desktop with at least 6 GB of memory for Docker (Settings, Resources). The cluster
-  node, the ingress controller and the Atlas images all live inside Docker.
+- Docker Desktop with at least 8 GB of memory for Docker (Settings, Resources). The cluster
+  node, the ingress controller, the Atlas images, Postgres and MongoDB all live inside Docker;
+  6 GB was enough before the document store was added.
 - `kubectl`. Docker Desktop installs one. Check with `kubectl version --client`.
 - `kind`. Windows: `winget install -e --id Kubernetes.kind`. macOS: `brew install kind`.
   Linux: download the release binary from https://kind.sigs.k8s.io. Check with `kind version`.
@@ -114,14 +116,15 @@ cp k8s/base/secret.example.env k8s/secret.env
 openssl rand -hex 32        # paste the output as JWT_SECRET in k8s/secret.env
 kubectl apply -f k8s/base/namespace.yaml
 kubectl -n atlas create secret generic atlas-secrets --from-env-file=k8s/secret.env
-kubectl -n atlas get secret atlas-secrets      # TYPE Opaque, DATA 4
+kubectl -n atlas get secret atlas-secrets      # TYPE Opaque, DATA 6
 ```
 
 `JWT_SECRET` signs every session token. The placeholder in the example file is in a public
 repository, so a cluster that keeps it lets anyone forge a login; replace it before the Secret
-is created (the API logs a warning at startup while the placeholder is in use). The other two
-placeholders only travel inside the cluster. Put your model key in `LLM_API_KEY`, or leave it
-empty to run without the summary feature.
+is created (the API logs a warning at startup while the placeholder is in use). The other four
+placeholders (`POSTGRES_PASSWORD`, `MERIDIAN_API_KEY`, `MONGO_USER`, `MONGO_PASSWORD`) only
+travel inside the cluster. Put your model key in `LLM_API_KEY`, or leave it empty to run without
+the summary feature.
 
 To change a value later, delete and recreate the Secret, then restart what reads it:
 `kubectl -n atlas delete secret atlas-secrets`, create it again, then
@@ -139,8 +142,8 @@ kubectl apply -k k8s/base
 kubectl -n atlas get pods -w        # Ctrl+C when every pod is Running and 1/1, except atlas-seed, which ends as Completed 0/1
 ```
 
-What you will see, in order: `db` and `meridian` come up first. `atlas-seed` runs for 80 to
-100 seconds while it writes the Test Facility history. The `api` pods wait for the database in
+What you will see, in order: `db`, `mongo-0` and `meridian` come up first. `atlas-seed` runs
+for 80 to 100 seconds while it writes the Test Facility history. The `api` pods wait for the database in
 an init container, then start but stay `0/1` until the seed Job has created the schema and
 `/health` answers. `worker` and `web` come up alongside. On the reference laptop the whole
 thing went from `apply` to everything Ready in 84 seconds on the first build and 103 seconds
@@ -151,10 +154,13 @@ on a rebuild with the Compose stack running at the same time.
 Check these in order. Each step depends on the one before it.
 
 1. Every pod `Running` and `1/1`, except the seed pod, which shows `Completed 0/1` because
-   it has finished its work and will not run again:
+   it has finished its work and will not run again. The document store is the one pod with a
+   fixed name, `mongo-0`: it belongs to a StatefulSet, so its name and its disk
+   (`kubectl -n atlas get pvc` shows `mongo-data-mongo-0`) stay the same across restarts.
 
    ```bash
    kubectl -n atlas get pods
+   kubectl -n atlas get pvc            # pgdata, meridian-data, mongo-data-mongo-0, all Bound
    ```
 
 2. The seed Job `Complete`. Do this within ten minutes of the seed finishing: the Job removes
@@ -173,9 +179,14 @@ Check these in order. Each step depends on the one before it.
 3. The API answers through the Ingress:
 
    ```bash
-   curl -s localhost/health          # {"status":"ok","database":"ok","migrations":1}
+   curl -s localhost/health          # {"status":"ok","database":"ok","migrations":1,"ai_store":"ok"}
    curl -s localhost/health/live     # {"status":"alive"}
    ```
+
+   `ai_store` is the document store. `unavailable` means the api cannot reach `mongo-0`; the
+   clinical record is still served and `status` stays `ok`, because readiness must not fail for
+   a dependency the API can live without. `kubectl -n atlas get pod mongo-0` and
+   `kubectl -n atlas logs mongo-0 --tail=20` say why.
 
 4. Login works and protected routes need the token:
 
@@ -310,8 +321,22 @@ Changing a value in `configmap.yaml` and applying does not restart anything by i
   `nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"`, which `ingress.yaml` does.
 - `kind load docker-image` must be repeated after every image build. The cluster does not
   see your local Docker images otherwise.
-- Docker Desktop needs at least 6 GB of memory for the cluster plus the images. With less,
-  pods sit in `Pending` or get `OOMKilled`.
+- Docker Desktop needs at least 8 GB of memory for the cluster plus the images now that
+  MongoDB runs beside Postgres (6 GB was enough before). With less, pods sit in `Pending` or
+  get `OOMKilled`.
+- A StatefulSet's PersistentVolumeClaim is not deleted with the StatefulSet. After
+  `kubectl -n atlas delete statefulset mongo` (or `kubectl delete namespace atlas`) the claim
+  `mongo-data-mongo-0` may remain, and the next apply reuses it, old data included. A clean
+  reset of the AI store is `kubectl -n atlas delete pvc mongo-data-mongo-0` after the
+  StatefulSet is gone; `kind delete cluster` removes everything anyway.
+- The api pod log shows `ai_store indexes not created, the store is unavailable` once at
+  startup. The api Pods and `mongo-0` start together, and the api is usually first (its init
+  container waits for Postgres only). Nothing to do: the first score or summary that reaches the
+  store creates the indexes, and `mongo-0`'s log shows the `Index build: done building` lines.
+- `/health` says `"ai_store":"unavailable"` while everything else works: the api cannot reach
+  `mongo-0`. Scores and summaries still work and say `stored: false`; the cards show "history
+  unavailable". `kubectl -n atlas get pod mongo-0` and its logs say why (most often the pod is
+  still starting, or the Secret is missing `MONGO_USER` or `MONGO_PASSWORD`).
 - The worker's liveness probe checks the age of `/tmp/worker-heartbeat`. It has a 60 second
   initial delay because the worker waits for the seed Job before its loop starts. If seeding
   takes much longer than that on your machine, the worker may restart once; it recovers on
@@ -360,4 +385,6 @@ kind delete cluster --name atlas
 
 This removes the node container and with it every pod, volume and the Secret. Your images
 stay in Docker, so bringing the cluster back is steps 2 to 5 again. To remove only Atlas and
-keep the cluster: `kubectl delete namespace atlas`.
+keep the cluster: `kubectl delete namespace atlas`, then `kubectl -n atlas get pvc` to check
+that the StatefulSet's claim `mongo-data-mongo-0` went with it (a PVC is namespaced, so
+deleting the namespace removes it; deleting only the StatefulSet does not).

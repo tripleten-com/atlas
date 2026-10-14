@@ -16,16 +16,19 @@ response also says what the record already knows about its 30-day window (`outco
 while the window is open, "readmitted" when a return encounter is on file, "not_readmitted" when
 the window closed quietly. The card shows the probability as a forecast only while it is pending.
 
-Every prediction is metered with record_usage(), which is what the Usage page counts.
+Every prediction is metered with record_usage(), which is what the Usage page counts, and written
+as a document to the AI store (ai_store.record_prediction) under the same request_id, so the two
+can be matched later. When the store is down the route still answers; `stored` is then false.
 """
 from __future__ import annotations
 
 import time
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from psycopg import Connection
 
-from .. import ml
+from .. import ai_store, ml
 from ..auth import CurrentUser, get_current_user
 from ..db import get_db
 from ..metering import record_usage
@@ -34,6 +37,7 @@ from ..tenancy import load_patient
 
 router = APIRouter(tags=["risk"])
 
+FEATURE = "readmission-risk"
 NOT_APPLICABLE = "not applicable: no discharged inpatient or observation encounter"
 CURRENTLY_ADMITTED = "not applicable: patient currently admitted"
 
@@ -61,7 +65,16 @@ def readmission_risk(
 
     probability = ml.predict_probability(model, row)
     elapsed_ms = int((time.monotonic() - started) * 1000)
-    record_usage(conn, user, feature="readmission-risk", model=model["model_version"], predictions=1, elapsed_ms=elapsed_ms)
+    request_id = str(uuid.uuid4())  # shared by the Postgres usage row and the Mongo document
+    record_usage(
+        conn, user, feature=FEATURE, model=model["model_version"], predictions=1, elapsed_ms=elapsed_ms, request_id=request_id
+    )
+    # Fire-and-forget: a store that is down costs the history entry, never the answer.
+    stored = ai_store.record_prediction(
+        user.tenant_id, request_id, feature=FEATURE, model_version=model["model_version"],
+        patient_id=patient_id, encounter_id=row["encounter_id"], probability=round(probability, 3),
+        band=ml.band(probability), inputs={k: row[k] for k in model["feature_columns"]}, state=outcome["outcome"],
+    )
     return ReadmissionRisk(
         probability=round(probability, 3),
         band=ml.band(probability),
@@ -74,4 +87,5 @@ def readmission_risk(
         window_closes_at=outcome["window_closes_at"],
         outcome=outcome["outcome"],
         readmitted_at=outcome["readmitted_at"],
+        stored=stored,
     )

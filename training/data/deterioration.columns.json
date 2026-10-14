@@ -1,0 +1,80 @@
+{
+  "vitals": [
+    "heart_rate",
+    "systolic_bp",
+    "diastolic_bp",
+    "respiratory_rate",
+    "temperature",
+    "spo2"
+  ],
+  "sequence_features": [
+    "heart_rate",
+    "systolic_bp",
+    "diastolic_bp",
+    "respiratory_rate",
+    "temperature",
+    "spo2",
+    "heart_rate_mask",
+    "systolic_bp_mask",
+    "diastolic_bp_mask",
+    "respiratory_rate_mask",
+    "temperature_mask",
+    "spo2_mask"
+  ],
+  "static_features": [
+    "age",
+    "sex",
+    "admission_type",
+    "hours_since_admission"
+  ],
+  "window_hours": 24,
+  "horizon_hours": 12,
+  "first_as_of_hour": 12,
+  "onset_rule": {
+    "earliest_hour": 12,
+    "min_crossings": 2,
+    "thresholds": {
+      "heart_rate": {
+        "op": ">",
+        "value": 120.0
+      },
+      "respiratory_rate": {
+        "op": ">",
+        "value": 24.0
+      },
+      "spo2": {
+        "op": "<",
+        "value": 90.0
+      },
+      "systolic_bp": {
+        "op": "<",
+        "value": 90.0
+      },
+      "temperature": {
+        "op": ">",
+        "value": 38.5
+      }
+    }
+  },
+  "hourly_columns": [
+    "encounter_id",
+    "hour_index",
+    "heart_rate",
+    "systolic_bp",
+    "diastolic_bp",
+    "respiratory_rate",
+    "temperature",
+    "spo2"
+  ],
+  "static_columns": [
+    "encounter_id",
+    "patient_id",
+    "age",
+    "sex",
+    "admission_type",
+    "admit_date",
+    "discharge_date",
+    "hours_total",
+    "onset_hour"
+  ]
+}

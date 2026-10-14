@@ -188,4 +188,8 @@ export { API_URL };
 // ---------------------------------------------------------------- AI features
 
 export const getReadmissionRisk = (id) => get(`/api/patients/${id}/risk/readmission`);
+// early warning for the open inpatient stay: 200 with state scored | insufficient_data | deteriorating
+export const getDeteriorationRisk = (id) => get(`/api/patients/${id}/risk/deterioration`);
 export const postStaySummary = (id) => post(`/api/patients/${id}/summary`);
+// earlier outputs from the document store: params { feature, limit }
+export const getAiHistory = (id, params) => get(`/api/patients/${id}/ai/history`, params);

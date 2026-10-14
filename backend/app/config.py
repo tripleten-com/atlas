@@ -40,6 +40,10 @@ class Settings:
     # optional: the artifact_sha256 from training_run.json. When set, a file that does not
     # match is refused (503) instead of being unpickled.
     model_sha256: str = (os.environ.get("MODEL_SHA256") or "").strip().lower()
+    # The early-warning model: an ONNX graph served with onnxruntime on CPU (the API never
+    # imports torch). Its model card, deterioration.json, sits next to it with the same stem.
+    model_deterioration_path: str = os.environ.get("MODEL_DETERIORATION_PATH", "/app/models/deterioration.onnx")
+    model_deterioration_sha256: str = (os.environ.get("MODEL_DETERIORATION_SHA256") or "").strip().lower()
 
     # The language model behind generative features: any OpenAI-compatible endpoint.
     # `or` (not a .get default) so an empty `LLM_BASE_URL=` line in .env still falls back.
@@ -48,6 +52,15 @@ class Settings:
     llm_model: str = os.environ.get("LLM_MODEL") or "Qwen/Qwen3-235B-A22B-Instruct-2507"
     # tokens (input + output) one tenant may spend per UTC day across generative features
     llm_daily_token_limit: int = int(os.environ.get("LLM_DAILY_TOKEN_LIMIT") or "200000")
+
+    # The document store for AI outputs (app/ai_store.py). The default matches the Compose
+    # mongo service as seen from your machine (host port 27018); Compose and Kubernetes set
+    # MONGO_URL themselves. A store that cannot be reached never breaks a route: the response
+    # says "stored": false and /health says "ai_store": "unavailable".
+    mongo_url: str = os.environ.get("MONGO_URL") or "mongodb://atlas:atlas-dev-only@localhost:27018/atlas_ai?authSource=admin"
+    ai_store_db: str = os.environ.get("AI_STORE_DB") or "atlas_ai"
+    # predictions expire after this many days (a TTL index); generated text is kept
+    ai_store_prediction_ttl_days: int = int(os.environ.get("AI_STORE_PREDICTION_TTL_DAYS") or "90")
 
 
 settings = Settings()

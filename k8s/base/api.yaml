@@ -70,17 +70,36 @@ spec:
             # password never appears in this file
             - name: DATABASE_URL
               value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)
+            # The document store, the same way: user and password from the Secret, the URL
+            # assembled here. authSource=admin because the root user lives in the admin database.
+            - name: MONGO_USER
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: MONGO_USER
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: MONGO_PASSWORD
+            - name: MONGO_URL
+              value: mongodb://$(MONGO_USER):$(MONGO_PASSWORD)@mongo:27017/atlas_ai?authSource=admin
+          # /health also pings the document store, with a half-second budget when the store is
+          # down. The probes' default timeout is one second; three leaves room for that plus the
+          # database query on a busy laptop, so an outage of the store never fails readiness.
           startupProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 5
+            timeoutSeconds: 3
             failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 10
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /health/live

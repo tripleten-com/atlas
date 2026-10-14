@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, FileText, Gauge, Info, Sparkles } from "luci
 import { postStaySummary } from "../api/client";
 import { Button, Card, Empty, Retry } from "../components";
 import { formatNumber } from "../lib/format";
+import { EarlierOutputs } from "./EarlierOutputs";
 
 // The generative AI feature: a short summary of the patient's latest stay, written by a language
 // model from rows the backend fetched. Nothing happens until the clinician presses the button,
@@ -14,6 +15,8 @@ import { formatNumber } from "../lib/format";
 //   429  daily token limit reached
 //   503  no model configured on the server
 //   anything else: an error with Retry
+// "Earlier outputs" under the card lists the last five summaries for this patient from the
+// document store, so a clinician can see what was written before pressing the button again.
 export function SummaryCard({ patientId }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -61,6 +64,11 @@ export function SummaryCard({ patientId }) {
           msg="Press the button to summarise the most recent visit in four to six sentences, with the rows it came from."
           className="py-6"
         />
+      )}
+      {!loading && (
+        <div className="mt-3">
+          <EarlierOutputs patientId={patientId} feature="stay-summary" refreshKey={result} />
+        </div>
       )}
     </Card>
   );
@@ -124,6 +132,7 @@ function SummaryResult({ result }) {
       <p className="border-t border-ink-100 pt-3 text-[11px] text-ink-500">
         {result.model} · {formatNumber(result.input_tokens)} in / {formatNumber(result.output_tokens)} out tokens ·{" "}
         {formatNumber(result.elapsed_ms)} ms · check every statement against the record before acting on it
+        {result.stored === false && " · not saved to the AI history (document store unavailable)"}
       </p>
     </div>
   );

@@ -1,7 +1,9 @@
 # training/
 
-Everything needed to train the 30-day readmission model that `backend/app/routers/risk.py`
-serves, and the evidence of each run.
+Everything needed to train the two predictive models, the 30-day readmission model that
+`backend/app/routers/risk.py` serves and the early-warning model that
+`backend/app/routers/early_warning.py` serves, and the evidence of each run. The readmission
+model is described first; the early-warning model has its own section at the end.
 
 ```
 export_training_set.py   Postgres -> training/data/readmission.csv + readmission.columns.json (Test Facility only)
@@ -12,6 +14,15 @@ data/readmission.csv     the committed snapshot: one row per discharged inpatien
 data/readmission.columns.json   which columns are categorical and the feature order, for train.py
 runs/<YYYY-MM-DD>/       training_run.json and train.log from each run (plus two screenshots for a lab run);
                          the .joblib written there is gitignored, the copy in models/ is committed
+
+export_vitals_hourly.py  Postgres -> data/vitals_hourly.csv + encounters_static.csv + deterioration.columns.json
+deterioration.py         shared definitions for the early-warning model: onset rule, hourly grid, window
+                         builder, standardisation, GRUNet (torch imported lazily, so the API can import the rest)
+train_deterioration.py   CSVs -> <out>/deterioration.onnx + deterioration.json + training_run.json + train.log
+check_onnx.py            runs the saved test windows through the .onnx with onnxruntime and compares with torch
+requirements-gpu.txt     the training pins for the GPU session (torch, numpy, pandas, scikit-learn, onnx)
+CODIO_GPU.md             the step list for the GPU session (g4dn.xlarge, Deep Learning AMI)
+runs/<YYYY-MM-DD>-deterioration/   the early-warning run record; the .onnx there is gitignored, models/ holds the copy
 ```
 
 ## What the model predicts
@@ -111,3 +122,46 @@ t2.micro EC2 instance. The script is the same; what changes is the evidence:
 
 The step list is in `CODIO.md`. The reference run in `runs/2026-10-11/` was made locally, on
 Windows, and is labelled as such.
+
+## The early-warning model
+
+The question is fixed for everyone: for an inpatient who is admitted right now, how likely is
+it that their vitals cross the deterioration line within the next 12 hours? The onset rule
+(`training/deterioration.py`): the first hour at or after hour 12 of the stay whose vitals meet
+at least two of heart rate above 120, respiratory rate above 24, SpO2 below 90, systolic blood
+pressure below 90, temperature above 38.5 °C. Nothing in the schema labels this; the export
+derives it from the vitals.
+
+One training row is an (encounter, as-of hour) window: the last 24 hours of the six vitals on
+an hourly grid (forward-filled inside the window, standardised with training-set statistics),
+a 24 x 6 mask channel (1 in an hour with a measurement) and four static features (age, sex,
+admission type, hours since admission). Windows start at hour 12 and repeat every `--stride`
+hours until discharge or the onset hour; later windows are dropped. The label is 1 when the
+onset falls within the next 12 hours. The split is grouped by patient, the standardiser is fit
+on training rows only, and only measurements before the as-of hour enter a window.
+
+```bash
+.venv/Scripts/python training/export_vitals_hourly.py
+<python with torch> training/train_deterioration.py --stride 4 --epochs 3                 # rehearsal
+<python with torch> training/train_deterioration.py --device cuda --time-one-epoch        # reference
+cp training/runs/$(date +%F)-deterioration/deterioration.{onnx,json} models/
+.venv/Scripts/python training/check_onnx.py training/runs/$(date +%F)-deterioration
+docker compose restart backend
+```
+
+Flags: `--data-dir`, `--out`, `--device auto|cpu|cuda`, `--stride` (1 is the reference, 4 the
+quick setting), `--epochs` (upper bound, 40), `--no-mask` (the cadence ablation: zeroes the mask
+channel, same tensor shape), `--time-one-epoch` (one epoch on cpu and one on cuda, same data and
+batch size, recorded as `epoch_seconds`), `--seed` (42), `--max-minutes` (14, a safety stop for
+the one-hour lab).
+
+Two things the reference run shows and REPORT.md should say. First, the mask channel also
+encodes nursing cadence, which rises after the simulated onset begins and before the threshold
+is crossed, so part of the signal is "someone is worried"; `--no-mask` measures it. Second,
+`pos_weight` (about 65 negatives per positive) inflates every probability: the ranking is good
+(average precision is the headline number, because prevalence is about 1.6%), but the
+calibration table shows observed rates far below the predicted ones, and at the reference
+alert threshold of 0.20 the alert rate is high. The alert-rate and lead-time table in
+`training_run.json` (`alert_table`) gives the same numbers at several thresholds so a student
+can pick a threshold and defend it. The numbers from the laptop reference run are in
+`REFERENCE_NOTES.md`; they come from an RTX 4090, not from the lab's T4.

@@ -1,8 +1,12 @@
 # The ingestion worker: same image as the API, different command, no Service (nothing calls
 # it; it calls Meridian and the database). One replica is enough for this feed.
 #
-# It has no HTTP port, so liveness is an exec probe: the worker touches /tmp/worker-heartbeat
-# once per loop, and the probe fails when that file is older than 120 seconds.
+# It has no HTTP port, so both probes are exec probes on the same heartbeat: the worker touches
+# /tmp/worker-heartbeat once per loop, and a probe fails when that file is older than 120
+# seconds. Readiness on a Pod with no Service changes no traffic; it is still here so
+# `kubectl get pods` shows 0/1 instead of 1/1 while the worker is waiting for the seed Job, and
+# so every Deployment in the base answers the same two questions (the automated check for Task 4
+# looks for both probes on every Deployment).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,9 +32,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: atlas-config
-          # Least privilege: the worker talks to Postgres and Meridian, so it gets only those two
-          # keys from the Secret. It never signs a token or calls the language model, so it does
-          # not see JWT_SECRET or LLM_API_KEY (compare api.yaml, which needs all four).
+          # Least privilege: the worker talks to Postgres, Meridian and the document store, so it
+          # gets only those keys from the Secret. It never signs a token or calls the language
+          # model, so it does not see JWT_SECRET or LLM_API_KEY (compare api.yaml, which needs
+          # all six).
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
@@ -44,6 +49,29 @@ spec:
                   key: MERIDIAN_API_KEY
             - name: DATABASE_URL
               value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)
+            - name: MONGO_USER
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: MONGO_USER
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: MONGO_PASSWORD
+            - name: MONGO_URL
+              value: mongodb://$(MONGO_USER):$(MONGO_PASSWORD)@mongo:27017/atlas_ai?authSource=admin
+          # The same shell test twice: a heartbeat file younger than 120 seconds. Readiness has
+          # no initial delay and fails quietly until the first loop; liveness waits a minute first,
+          # because a restart is the wrong answer to "still waiting for the seed Job".
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - test $(( $(date +%s) - $(stat -c %Y /tmp/worker-heartbeat) )) -lt 120
+            periodSeconds: 10
+            failureThreshold: 3
           livenessProbe:
             exec:
               command:

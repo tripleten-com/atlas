@@ -1,0 +1,246 @@
+{
+  "model": "deterioration_12h",
+  "question": "deterioration_12h",
+  "model_version": "deterioration-20261014-0877aaca",
+  "trained_at": "2026-10-14T10:57:06.401685+00:00",
+  "trained_on": "local",
+  "instance_hint": null,
+  "device": "cuda",
+  "gpu_name": "NVIDIA GeForce RTX 4090",
+  "python": "3.12.7",
+  "packages": {
+    "torch": "2.6.0+cu124",
+    "cuda": "12.4",
+    "numpy": "2.5.3",
+    "pandas": "2.3.3",
+    "scikit-learn": "1.9.1",
+    "onnx": "1.23.2"
+  },
+  "data_file": "vitals_hourly.csv",
+  "data_sha256": "0877aaca0e202b516726f67be3214e3b3440d60ae5642a8e0318aced91d432c6",
+  "static_file": "encounters_static.csv",
+  "static_sha256": "a1c9de53323034ea409d4e4d46efa0273b1070d3665c90b27aa1f288380c9466",
+  "stride": 1,
+  "windows": 145989,
+  "positive_windows": 2299,
+  "prevalence": 0.0157,
+  "encounters": 1783,
+  "onset_encounters": 193,
+  "split": {
+    "method": "grouped_by_patient",
+    "group": "patient_id",
+    "test_fraction": 0.2,
+    "validation_fraction_of_train": 0.15,
+    "random_state": 42,
+    "train_windows": 101464,
+    "validation_windows": 17325,
+    "test_windows": 27200
+  },
+  "hyperparameters": {
+    "hidden": 64,
+    "head": 32,
+    "batch_size": 512,
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "max_epochs": 40,
+    "patience": 6,
+    "pos_weight": 64.93,
+    "autocast": true
+  },
+  "mask_channel": true,
+  "epochs_run": 21,
+  "best_epoch": 15,
+  "stopped_by": "patience",
+  "epoch_seconds": {
+    "cpu": 8.09,
+    "cuda": 0.65
+  },
+  "train_metrics": {
+    "auroc": 0.9985,
+    "average_precision": 0.945,
+    "brier": 0.0213
+  },
+  "metrics": {
+    "auroc": 0.9896,
+    "average_precision": 0.8936,
+    "brier": 0.02
+  },
+  "calibration": [
+    {
+      "lower": 0.0,
+      "upper": 0.1,
+      "count": 24926,
+      "mean_predicted": 0.0033,
+      "observed": 0.001
+    },
+    {
+      "lower": 0.1,
+      "upper": 0.2,
+      "count": 464,
+      "mean_predicted": 0.1451,
+      "observed": 0.0065
+    },
+    {
+      "lower": 0.2,
+      "upper": 0.3,
+      "count": 278,
+      "mean_predicted": 0.2446,
+      "observed": 0.0108
+    },
+    {
+      "lower": 0.3,
+      "upper": 0.4,
+      "count": 199,
+      "mean_predicted": 0.3433,
+      "observed": 0.0151
+    },
+    {
+      "lower": 0.4,
+      "upper": 0.5,
+      "count": 160,
+      "mean_predicted": 0.452,
+      "observed": 0.0188
+    },
+    {
+      "lower": 0.5,
+      "upper": 0.6,
+      "count": 181,
+      "mean_predicted": 0.5528,
+      "observed": 0.0276
+    },
+    {
+      "lower": 0.6,
+      "upper": 0.7,
+      "count": 166,
+      "mean_predicted": 0.6441,
+      "observed": 0.0181
+    },
+    {
+      "lower": 0.7,
+      "upper": 0.8,
+      "count": 133,
+      "mean_predicted": 0.7475,
+      "observed": 0.0075
+    },
+    {
+      "lower": 0.8,
+      "upper": 0.9,
+      "count": 110,
+      "mean_predicted": 0.8429,
+      "observed": 0.0545
+    },
+    {
+      "lower": 0.9,
+      "upper": 1.0,
+      "count": 583,
+      "mean_predicted": 0.9872,
+      "observed": 0.7118
+    }
+  ],
+  "alert_threshold": 0.2,
+  "alerts_per_100_patient_days": 159.71,
+  "sensitivity_at_threshold": 1.0,
+  "median_lead_time_hours": 15.0,
+  "alert_detail": {
+    "alert_threshold": 0.2,
+    "alerts": 1810,
+    "patient_days": 1133.3,
+    "alerts_per_100_patient_days": 159.71,
+    "onset_encounters": 39,
+    "caught_encounters": 39,
+    "sensitivity_at_threshold": 1.0,
+    "window_recall_at_threshold": 0.94,
+    "window_precision_at_threshold": 0.2425,
+    "median_lead_time_hours": 15.0
+  },
+  "alert_table": [
+    {
+      "alert_threshold": 0.2,
+      "alerts": 1810,
+      "patient_days": 1133.3,
+      "alerts_per_100_patient_days": 159.71,
+      "onset_encounters": 39,
+      "caught_encounters": 39,
+      "sensitivity_at_threshold": 1.0,
+      "window_recall_at_threshold": 0.94,
+      "window_precision_at_threshold": 0.2425,
+      "median_lead_time_hours": 15.0
+    },
+    {
+      "alert_threshold": 0.35,
+      "alerts": 1413,
+      "patient_days": 1133.3,
+      "alerts_per_100_patient_days": 124.68,
+      "onset_encounters": 39,
+      "caught_encounters": 39,
+      "sensitivity_at_threshold": 1.0,
+      "window_recall_at_threshold": 0.9293,
+      "window_precision_at_threshold": 0.3071,
+      "median_lead_time_hours": 14.0
+    },
+    {
+      "alert_threshold": 0.5,
+      "alerts": 1173,
+      "patient_days": 1133.3,
+      "alerts_per_100_patient_days": 103.5,
+      "onset_encounters": 39,
+      "caught_encounters": 39,
+      "sensitivity_at_threshold": 1.0,
+      "window_recall_at_threshold": 0.9208,
+      "window_precision_at_threshold": 0.3666,
+      "median_lead_time_hours": 13.0
+    },
+    {
+      "alert_threshold": 0.7,
+      "alerts": 826,
+      "patient_days": 1133.3,
+      "alerts_per_100_patient_days": 72.88,
+      "onset_encounters": 39,
+      "caught_encounters": 39,
+      "sensitivity_at_threshold": 1.0,
+      "window_recall_at_threshold": 0.9036,
+      "window_precision_at_threshold": 0.5109,
+      "median_lead_time_hours": 13.0
+    },
+    {
+      "alert_threshold": 0.8,
+      "alerts": 693,
+      "patient_days": 1133.3,
+      "alerts_per_100_patient_days": 61.15,
+      "onset_encounters": 39,
+      "caught_encounters": 39,
+      "sensitivity_at_threshold": 1.0,
+      "window_recall_at_threshold": 0.9015,
+      "window_precision_at_threshold": 0.6075,
+      "median_lead_time_hours": 13.0
+    },
+    {
+      "alert_threshold": 0.9,
+      "alerts": 583,
+      "patient_days": 1133.3,
+      "alerts_per_100_patient_days": 51.44,
+      "onset_encounters": 39,
+      "caught_encounters": 39,
+      "sensitivity_at_threshold": 1.0,
+      "window_recall_at_threshold": 0.8887,
+      "window_precision_at_threshold": 0.7118,
+      "median_lead_time_hours": 11.0
+    },
+    {
+      "alert_threshold": 0.95,
+      "alerts": 526,
+      "patient_days": 1133.3,
+      "alerts_per_100_patient_days": 46.41,
+      "onset_encounters": 39,
+      "caught_encounters": 39,
+      "sensitivity_at_threshold": 1.0,
+      "window_recall_at_threshold": 0.8694,
+      "window_precision_at_threshold": 0.7719,
+      "median_lead_time_hours": 11.0
+    }
+  ],
+  "artifact_file": "deterioration.onnx",
+  "artifact_sha256": "5872e65386e45bacd355df8bb2b601158167753d9ca7d26f3f971cbf12fc476c",
+  "artifact_json_file": "deterioration.json",
+  "artifact_json_sha256": "a647b31236830d799af884c1fd39d795bc2c3434527de152c9ef415ed77b0eef"
+}

@@ -196,6 +196,30 @@ class ReadmissionRisk(BaseModel):
     window_closes_at: datetime = Field(..., description="as_of plus 30 days")
     outcome: Literal["pending", "readmitted", "not_readmitted"]
     readmitted_at: datetime | None = Field(None, description="When the first return encounter in the window began")
+    stored: bool = Field(True, description="Whether this prediction was written to the document store (false when it is down)")
+
+
+class EarlyWarning(BaseModel):
+    """The early-warning answer for an admitted inpatient. `state` says what the other fields
+    mean: a forecast ("scored"), no forecast yet ("insufficient_data"), or the event has already
+    happened ("deteriorating", with `as_of` the hour the onset rule fired)."""
+
+    probability: float | None = Field(
+        None, description="Chance that the vitals cross the deterioration line within the next 12 hours, 0 to 1; null unless state is scored"
+    )
+    band: Literal["low", "medium", "high"] | None = Field(None, description="low below 0.15, medium below 0.35, high from 0.35")
+    alert: bool | None = Field(None, description="probability at or above the model's alert threshold (0.20 in the reference)")
+    model_version: str
+    trained_on: str = Field(..., description="'ec2' when the model was trained in the AWS lab, 'local' otherwise")
+    trained_at: datetime | None = None
+    as_of: datetime = Field(..., description="The hour the forecast starts from (the hour after the latest vitals); for 'deteriorating', the hour the onset rule fired")
+    encounter_id: int = Field(..., description="The open inpatient stay the answer is about")
+    hours_admitted: int = Field(..., description="Whole hours of the stay up to as_of")
+    hours_of_vitals: int = Field(..., description="Hours of the stay with at least one vitals measurement")
+    window_start: datetime = Field(..., description="The 24-hour window the model read starts here ...")
+    window_end: datetime = Field(..., description="... and ends here (as_of): only measurements before it enter the window")
+    state: Literal["scored", "insufficient_data", "deteriorating"]
+    stored: bool = Field(True, description="Whether this answer was written to the document store (false when it is down)")
 
 
 class SourceRef(BaseModel):
@@ -211,6 +235,24 @@ class StaySummary(BaseModel):
     output_tokens: int
     elapsed_ms: int
     encounter_id: int = Field(..., description="The encounter the summary is about")
+    stored: bool = Field(True, description="Whether this summary was written to the document store (false when it is down)")
+
+
+class AiHistoryItem(BaseModel):
+    """One earlier output from the document store: a score (probability, band, state) or a text."""
+
+    created_at: datetime
+    feature: str
+    model_version: str | None = None
+    probability: float | None = None
+    band: str | None = None
+    state: str | None = None
+    text_preview: str | None = Field(None, description="The first 160 characters of a generated text")
+
+
+class AiHistory(BaseModel):
+    items: list[AiHistoryItem]
+    stored: bool = Field(..., description="False when the document store could not be read; items are then empty")
 
 
 # ---------------------------------------------------------------- dashboard

@@ -3,6 +3,7 @@ import { getReadmissionRisk } from "../api/client";
 import { Badge, Card, Empty, Retry, Spinner } from "../components";
 import { useApi } from "../hooks";
 import { formatDate, formatPercent } from "../lib/format";
+import { EarlierOutputs } from "./EarlierOutputs";
 
 // How each band reads. The text label carries the meaning; colour only reinforces it.
 const BANDS = {
@@ -19,6 +20,9 @@ const BANDS = {
 // The score is only a forecast while `outcome` is "pending". For an older discharge the record
 // already knows what happened, so the card shows that first and the score as what the model said
 // at the time. Presenting a months-old score as a live risk would be dishonest.
+//
+// Under the result, "Earlier outputs" lists the last five scores for this patient from the
+// document store; `stored: false` on the result means this one was not written there.
 export function RiskCard({ patientId }) {
   const { data, error, loading, reload } = useApi(() => getReadmissionRisk(patientId), [patientId]);
 
@@ -31,7 +35,12 @@ export function RiskCard({ patientId }) {
       ) : error ? (
         <RiskError error={error} onRetry={reload} />
       ) : (
-        <RiskResult data={data} />
+        <>
+          <RiskResult data={data} />
+          <div className="mt-3">
+            <EarlierOutputs patientId={patientId} feature="readmission-risk" refreshKey={data} />
+          </div>
+        </>
       )}
     </Card>
   );
@@ -109,6 +118,7 @@ function RiskResult({ data }) {
       <p className="border-t border-ink-100 pt-3 text-[11px] text-ink-500">
         Model trained on Test Facility data{data.trained_at ? `, ${formatDate(data.trained_at)}` : ""} · {data.model_version} ·{" "}
         {data.features_used.length} features · counts prior stays, so a facility with only days of history scores everyone as a first admission
+        {data.stored === false && " · not saved to the AI history (document store unavailable)"}
       </p>
     </div>
   );

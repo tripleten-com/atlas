@@ -1,0 +1,110 @@
+training started 2026-10-14 10:57:06 UTC on local
+python 3.12.7, torch 2.6.0+cu124 (cuda 12.4), numpy 2.5.3, pandas 2.3.3, scikit-learn 1.9.1
+device cuda, gpu NVIDIA GeForce RTX 4090
+Wed Oct 14 05:57:06 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 610.60                 KMD Version: 610.60        CUDA UMD Version: 13.3     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                  Driver-Model | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 4090      WDDM  |   00000000:01:00.0  On |                  Off |
+|  0%   45C    P8             25W /  450W |    1440MiB /  24564MiB |      3%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A           11572    C+G   ...Chrome\Application\chrome.exe      N/A      |
+|    0   N/A  N/A           11780    C+G   C:\Windows\explorer.exe               N/A      |
+|    0   N/A  N/A           13184    C+G   ...indows\System32\ShellHost.exe      N/A      |
+|    0   N/A  N/A           13316    C+G   ...2txyewy\CrossDeviceResume.exe      N/A      |
+|    0   N/A  N/A           14160    C+G   ...lus\logioptionsplus_agent.exe      N/A      |
+|    0   N/A  N/A           15072    C+G   ...PN Connect\OpenVPNConnect.exe      N/A      |
+|    0   N/A  N/A           16308    C+G   ..._cw5n1h2txyewy\SearchHost.exe      N/A      |
+|    0   N/A  N/A           16340    C+G   ...y\StartMenuExperienceHost.exe      N/A      |
+|    0   N/A  N/A           16960    C+G   ...1g1gvanyjgm\WhatsApp.Root.exe      N/A      |
+|    0   N/A  N/A           19232    C+G   ....0.4283.45\msedgewebview2.exe      N/A      |
+|    0   N/A  N/A           21124    C+G   ...ms\Microsoft VS Code\Code.exe      N/A      |
+|    0   N/A  N/A           23048    C+G   ...5n1h2txyewy\TextInputHost.exe      N/A      |
+|    0   N/A  N/A           25008    C+G   ...8bbwe\PhoneExperienceHost.exe      N/A      |
+|    0   N/A  N/A           25928    C+G   ...\Local\Programs\Loom\Loom.exe      N/A      |
+|    0   N/A  N/A           26696    C+G   ....0.4283.45\msedgewebview2.exe      N/A      |
+|    0   N/A  N/A           27128    C+G   ...nager\LGMonitorAppManager.exe      N/A      |
+|    0   N/A  N/A           28168    C+G   ...\Local\Programs\Loom\Loom.exe      N/A      |
+|    0   N/A  N/A           28432    C+G   ...\slack\app-4.52.178\slack.exe      N/A      |
+|    0   N/A  N/A           29688    C+G   ...em32\ApplicationFrameHost.exe      N/A      |
+|    0   N/A  N/A           30152    C+G   ...yApp\MicrosoftSecurityApp.exe      N/A      |
+|    0   N/A  N/A           30228    C+G   ...ilities\AWCC6_UpgradePrep.exe      N/A      |
+|    0   N/A  N/A           31576    C+G   ...\slack\app-4.52.178\slack.exe      N/A      |
+|    0   N/A  N/A           33264    C+G   ...Chrome\Application\chrome.exe      N/A      |
+|    0   N/A  N/A           33860    C+G   ...ntrolPanel\SystemSettings.exe      N/A      |
+|    0   N/A  N/A           35800    C+G   ...r\frontend\Docker Desktop.exe      N/A      |
+|    0   N/A  N/A           37624    C+G   ..._pzs8sxrjxfjjc\app\claude.exe      N/A      |
+|    0   N/A  N/A           37768    C+G   ...c76g0\app\ChatGPT Classic.exe      N/A      |
+|    0   N/A  N/A           37816    C+G   ..._pzs8sxrjxfjjc\app\claude.exe      N/A      |
++-----------------------------------------------------------------------------------------+
+data training/data/vitals_hourly.csv sha256 0877aaca0e20...: 191341 encounter-hours, 1783 encounters, 791 patients, 193 with an onset
+windows at stride 1: 145989 (2299 positive, prevalence 1.57%) from 1783 encounters; built in 1.5s
+  train: 101464 windows, 1539 positive, 537 patients
+  validation: 17325 windows, 293 positive, 95 patients
+  test: 27200 windows, 467 positive, 159 patients
+mask channel: on
+pos_weight 64.9 (negatives per positive in the training windows)
+one epoch on cpu: 8.09s (24 threads)
+one epoch on cuda: 0.65s (NVIDIA GeForce RTX 4090)
+epoch  1  loss 0.4696  validation AP 0.8511  0.7s  *
+epoch  2  loss 0.2512  validation AP 0.8497  0.6s
+epoch  3  loss 0.2173  validation AP 0.8374  0.6s
+epoch  4  loss 0.1991  validation AP 0.8380  0.6s
+epoch  5  loss 0.1868  validation AP 0.8468  0.6s
+epoch  6  loss 0.1696  validation AP 0.8619  0.6s  *
+epoch  7  loss 0.1644  validation AP 0.8588  0.6s
+epoch  8  loss 0.1507  validation AP 0.8653  0.6s  *
+epoch  9  loss 0.1397  validation AP 0.8480  0.6s
+epoch 10  loss 0.1351  validation AP 0.8721  1.5s  *
+epoch 11  loss 0.1253  validation AP 0.8511  1.6s
+epoch 12  loss 0.1242  validation AP 0.8753  1.6s  *
+epoch 13  loss 0.1064  validation AP 0.8705  1.5s
+epoch 14  loss 0.1009  validation AP 0.8503  1.5s
+epoch 15  loss 0.0905  validation AP 0.8772  1.5s  *
+epoch 16  loss 0.0845  validation AP 0.8630  1.5s
+epoch 17  loss 0.0698  validation AP 0.8626  1.5s
+epoch 18  loss 0.0695  validation AP 0.8650  1.5s
+epoch 19  loss 0.0629  validation AP 0.8552  1.5s
+epoch 20  loss 0.0745  validation AP 0.8600  1.5s
+epoch 21  loss 0.0540  validation AP 0.8558  1.5s
+fit took 23.6s; 21 epochs, best epoch 15 (validation AP 0.8772), stopped by patience
+train metrics: AUROC 0.9985, average precision 0.945, Brier 0.0213
+test  metrics: AUROC 0.9896, average precision 0.8936, Brier 0.02
+  (a big gap between the two AUROC values means overfitting; always-predict-the-base-rate Brier would be 0.0169)
+calibration (bin, count, mean predicted, observed):
+  0.0-0.1   24926  0.003  0.001
+  0.1-0.2     464  0.145  0.006
+  0.2-0.3     278  0.245  0.011
+  0.3-0.4     199  0.343  0.015
+  0.4-0.5     160  0.452  0.019
+  0.5-0.6     181  0.553  0.028
+  0.6-0.7     166  0.644  0.018
+  0.7-0.8     133  0.748  0.007
+  0.8-0.9     110  0.843  0.054
+  0.9-1.0     583  0.987  0.712
+alerts at threshold 0.2: 1810 over 1133.3 patient-days = 159.71 per 100 patient-days; caught 39 of 39 deteriorations (sensitivity 1.0), median lead time 15.0 h; window recall 0.94, window precision 0.2425
+alert-rate and lead-time table (threshold, alerts per 100 patient-days, caught/onsets, median lead h, window precision):
+  0.20   159.71   39/39    15.0  0.2425
+  0.35   124.68   39/39    14.0  0.3071
+  0.50   103.50   39/39    13.0  0.3666
+  0.70    72.88   39/39    13.0  0.5109
+  0.80    61.15   39/39    13.0  0.6075
+  0.90    51.44   39/39    11.0  0.7118
+  0.95    46.41   39/39    11.0  0.7719
+onnxruntime not installed in this environment; run: python training/check_onnx.py training/runs/2026-10-14-deterioration
+saved training/runs/2026-10-14-deterioration/deterioration.onnx (70 KB) sha256 5872e65386e4... and deterioration.json
+wrote training/runs/2026-10-14-deterioration/training_run.json and training/runs/2026-10-14-deterioration/train.log
+model_version deterioration-20261014-0877aaca; total 37.8s
+to serve it: copy deterioration.onnx and deterioration.json to models/ and restart the backend
+NOTE: trained_on is 'local'. The course requires the committed artifact to come from the GPU lab; if you are on an EC2 instance and see this, the metadata service did not answer.

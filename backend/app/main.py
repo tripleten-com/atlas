@@ -14,12 +14,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import ml
+from . import ai_store, ml, ml_deterioration
 from .config import settings
 from .db import close_pool, open_pool
 from .routers import (
     activity,
+    ai_history,
     dashboard,
+    early_warning,
     encounters,
     facilities,
     health,
@@ -49,6 +51,10 @@ async def lifespan(app: FastAPI):
     # Kubernetes the load happens inside the startup probe's window instead of a user's request.
     # A missing file is not fatal: the risk route answers 503 until one is deployed.
     ml.load_model()
+    ml_deterioration.load_model()  # the ONNX early-warning model; same rule, same 503 when missing
+    # The document store's indexes (including the TTL that expires predictions). A store that is
+    # down logs one warning and the API starts anyway; routes then answer with "stored": false.
+    ai_store.ensure_indexes()
     yield
     close_pool()
 
@@ -82,4 +88,6 @@ app.include_router(activity.router)
 app.include_router(integrations.router)
 app.include_router(org.router)
 app.include_router(risk.router)  # AI feature: 30-day readmission risk
+app.include_router(early_warning.router)  # AI feature: early warning of deterioration (ONNX)
 app.include_router(summary.router)  # AI feature: generated stay summary
+app.include_router(ai_history.router)  # earlier AI outputs from the document store

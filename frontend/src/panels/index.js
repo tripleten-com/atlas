@@ -13,4 +13,6 @@ export { TimelinePanel } from "./TimelinePanel";
 export { RecentActivityPanel } from "./RecentActivityPanel";
 export { AiFeaturesSlot } from "./AiFeaturesSlot";
 export { RiskCard } from "./RiskCard";
+export { EarlyWarningCard } from "./EarlyWarningCard";
 export { SummaryCard } from "./SummaryCard";
+export { EarlierOutputs } from "./EarlierOutputs";

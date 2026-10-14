@@ -1,0 +1,100 @@
+# MongoDB, the document store for AI outputs (docs/AI_STORE.md). The one StatefulSet in Atlas.
+#
+# Why a StatefulSet and not a Deployment: a StatefulSet gives each Pod a stable name (this one
+# is always `mongo-0`) and a disk of its own that follows the Pod across restarts and reschedules.
+# `volumeClaimTemplates` creates that PersistentVolumeClaim (`mongo-data-mongo-0`) for us, so
+# there is no separate PVC object here, unlike postgres.yaml. Postgres could have been a
+# StatefulSet too; it was kept a Deployment with `Recreate` so the two patterns sit side by side.
+#
+# The claim is not deleted with the StatefulSet. A clean reset is
+#   kubectl -n atlas delete statefulset mongo && kubectl -n atlas delete pvc mongo-data-mongo-0
+# (`kind delete cluster` removes everything anyway).
+#
+# --wiredTigerCacheSizeGB 0.25 caps the storage engine's cache; without it MongoDB takes half
+# of what it believes is the machine's memory, which on a laptop cluster is the whole node.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo
+  namespace: atlas
+  labels:
+    app: mongo
+spec:
+  serviceName: mongo          # the headless Service below; gives the Pod the DNS name mongo-0.mongo
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:7
+          args: ["--wiredTigerCacheSizeGB", "0.25"]
+          ports:
+            - name: mongo
+              containerPort: 27017
+          # The root user is created on the first start of an empty volume from these two
+          # values. Both come from the Secret; neither appears in this file.
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: MONGO_USER
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-secrets
+                  key: MONGO_PASSWORD
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+          # `ping` needs no login, so the probes work before and after the root user exists.
+          readinessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+---
+# Headless (clusterIP: None): no load-balancing address, just DNS. `mongo` resolves straight
+# to the Pod, and `mongo-0.mongo` names it individually. The api reaches it as mongo:27017.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: atlas
+spec:
+  clusterIP: None
+  selector:
+    app: mongo
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: mongo

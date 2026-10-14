@@ -1,0 +1,140 @@
+{
+  "model": "deterioration_12h",
+  "model_version": "deterioration-20261014-0877aaca",
+  "question": "Will this admitted inpatient's vitals cross the deterioration line within the next 12 hours?",
+  "trained_at": "2026-10-14T10:57:06.401685+00:00",
+  "trained_on": "local",
+  "onset_rule": {
+    "earliest_hour": 12,
+    "min_crossings": 2,
+    "thresholds": {
+      "heart_rate": {
+        "op": ">",
+        "value": 120.0
+      },
+      "respiratory_rate": {
+        "op": ">",
+        "value": 24.0
+      },
+      "spo2": {
+        "op": "<",
+        "value": 90.0
+      },
+      "systolic_bp": {
+        "op": "<",
+        "value": 90.0
+      },
+      "temperature": {
+        "op": ">",
+        "value": 38.5
+      }
+    }
+  },
+  "window_hours": 24,
+  "horizon_hours": 12,
+  "first_as_of_hour": 12,
+  "sequence_features": [
+    "heart_rate",
+    "systolic_bp",
+    "diastolic_bp",
+    "respiratory_rate",
+    "temperature",
+    "spo2",
+    "heart_rate_mask",
+    "systolic_bp_mask",
+    "diastolic_bp_mask",
+    "respiratory_rate_mask",
+    "temperature_mask",
+    "spo2_mask"
+  ],
+  "static_features": [
+    "age",
+    "sex",
+    "admission_type",
+    "hours_since_admission"
+  ],
+  "sex_codes": {
+    "female": 0,
+    "male": 1
+  },
+  "admission_type_codes": {
+    "inpatient": 0,
+    "observation": 1,
+    "emergency": 2,
+    "outpatient": 3
+  },
+  "standardisation": {
+    "sequence_means": [
+      85.725708,
+      137.478363,
+      82.055733,
+      18.089828,
+      37.022293,
+      95.884796
+    ],
+    "sequence_stds": [
+      8.497177,
+      16.353817,
+      8.945966,
+      2.289664,
+      0.43802,
+      1.555987
+    ],
+    "static_means": [
+      64.864365,
+      0.515937,
+      0.0,
+      76.470573
+    ],
+    "static_stds": [
+      18.030165,
+      0.499728,
+      1.0,
+      58.537178
+    ]
+  },
+  "mask_channel": true,
+  "alert_threshold": 0.2,
+  "bands": {
+    "low_below": 0.15,
+    "high_from": 0.35
+  },
+  "onnx": {
+    "file": "deterioration.onnx",
+    "opset": 17,
+    "inputs": {
+      "sequence": [
+        "batch",
+        24,
+        12
+      ],
+      "static": [
+        "batch",
+        4
+      ]
+    },
+    "output": {
+      "probability": [
+        "batch"
+      ]
+    },
+    "sha256": "5872e65386e45bacd355df8bb2b601158167753d9ca7d26f3f971cbf12fc476c"
+  },
+  "metrics": {
+    "auroc": 0.9896,
+    "average_precision": 0.8936,
+    "brier": 0.02
+  },
+  "alerts": {
+    "alert_threshold": 0.2,
+    "alerts": 1810,
+    "patient_days": 1133.3,
+    "alerts_per_100_patient_days": 159.71,
+    "onset_encounters": 39,
+    "caught_encounters": 39,
+    "sensitivity_at_threshold": 1.0,
+    "window_recall_at_threshold": 0.94,
+    "window_precision_at_threshold": 0.2425,
+    "median_lead_time_hours": 15.0
+  }
+}

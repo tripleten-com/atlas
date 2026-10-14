@@ -12,6 +12,7 @@ resources:
   - namespace.yaml
   - configmap.yaml
   - postgres.yaml
+  - mongo.yaml
   - meridian.yaml
   - seed-job.yaml
   - api.yaml
@@ -21,8 +22,8 @@ resources:
 
 images:
   - name: atlas-api
-    newTag: sha-c2e3970
+    newTag: sha-d5956e4
   - name: atlas-web
-    newTag: sha-c2e3970
+    newTag: sha-d5956e4
   - name: atlas-meridian
-    newTag: sha-c2e3970
+    newTag: sha-d5956e4

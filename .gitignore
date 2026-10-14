@@ -18,14 +18,17 @@ frontend/.vite/
 # feed state when run outside Docker
 feed/data/
 
-# trained models: only the serving artifact and its README are committed
+# trained models: only the serving artifacts (joblib, onnx plus its json) and the README are committed
 models/*
 !models/.gitkeep
 !models/*.joblib
+!models/*.onnx
+!models/*.json
 !models/README.md
 
-# train.py writes the artifact next to its run record; the copy in models/ is the one committed
+# the train scripts write the artifact next to the run record; the copy in models/ is the one committed
 training/runs/*/*.joblib
+training/runs/*/*.onnx
 
 # the real Kubernetes secret file; k8s/base/secret.example.env is the committed template
 k8s/secret.env

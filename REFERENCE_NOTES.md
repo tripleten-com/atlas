@@ -1,10 +1,13 @@
 # Reference notes: the numbers behind the Atlas reference build
 
 Every number a lesson or a project page may quote about the reference build, with the command
-that produced it and the date it was observed. Numbers marked "reported, not re-run" come from
-the build agents' reports on 2026-10-11 and were not reproduced in the final verification pass;
-everything else was observed in that pass on 2026-10-11 (Windows 11, Docker Desktop, Docker
-server 29.5.2, 16 GB of memory, Python 3.12.3 in `.venv`).
+that produced it and the date it was observed. Sections 1 to 8 are the 2026-10-11 pass (the
+platform, the readmission model, the stay summary, the first cluster); sections 9 to 15 are the
+2026-10-14 pass that added the early-warning model, the MongoDB document store and the automated
+check. Numbers marked "reported, not re-run" come from the build agents' reports and were not
+reproduced in the verification pass of that date; everything else was observed in that pass
+(Windows 11, Docker Desktop, Docker server 29.5.2, 16 GB of memory, Python 3.12.3 in `.venv`).
+Where a later section re-measured a number, the later section wins.
 
 Student pages should keep these soft ("about 1,200 patients", "around 0.75 AUROC"): the seed
 shifts its two-year window to end on the seed day, so another machine gets slightly different
@@ -49,6 +52,8 @@ to 2026-09-16) held DEMO 1,234 patients / 8,526 encounters / 308,458 vitals / 18
 and measurement counts depend on the seed day.
 
 ## 2. Tests and lint
+
+Counts as of 2026-10-11; section 9 has the 2026-10-14 numbers (70 backend tests).
 
 | Check | Result | Command |
 |---|---|---|
@@ -322,3 +327,282 @@ Other checks: `ml.predict_probability` with `discharge_disposition = float('nan'
 the gotcha the runbook now explains; the pinned ingress-nginx URLs
 (`controller-v1.15.1/deploy/static/provider/kind/deploy.yaml` and `.../cloud/deploy.yaml`)
 answered HTTP 200.
+
+## 9. The 2026-10-14 integration pass (early-warning model, document store, automated check)
+
+Four build agents added the early-warning model (training and serving), the MongoDB document
+store and `scripts/check_submission.py` on 2026-10-14; this pass integrated their work, re-ran
+every check from a stopped Compose stack, recreated the kind cluster from scratch and recorded
+the numbers below. Same machine as the earlier sections (Windows 11, Docker Desktop, 16 GB of
+memory). Numbers marked "reported" come from the agents' reports and were not reproduced here;
+everything else was observed in this pass. The Compose data volumes were kept (`docker compose
+down`, not `down -v`), so the database is still the one seeded 2026-10-11.
+
+```bash
+docker compose down            # 3 s
+docker compose up -d --build   # 22 s (image layers cached; backend healthy, worker started)
+```
+
+| Check | Result | Command |
+|---|---|---|
+| Backend startup log | `JWT_SECRET is the development default` warning, `model readmission-20261011-870b90fb loaded`, `early-warning model deterioration-20261014-0877aaca loaded from /app/models/deterioration.onnx in 61 ms (onnxruntime 1.31.0, CPU)`, `Application startup complete` | `docker compose logs backend` |
+| `/health` | `{"status":"ok","database":"ok","migrations":1,"ai_store":"ok"}` | `curl -s localhost:8000/health` |
+| Backend tests | 69 passed in 7.87 s at the start of the pass (47 before + 8 `test_ai_store.py` + 14 `test_early_warning.py`); 70 passed in 8.18 s after the index fix of section 14 added one test, re-run after `docker compose up -d --build` | `docker compose exec -T backend pytest -p no:warnings` |
+| Backend lint | All checks passed | `docker compose exec -T backend ruff check app tests` |
+| Scripts lint | All checks passed | `.venv/Scripts/python -m ruff check --config backend/ruff.toml training evals scripts` |
+| Frontend compile | built in 4.65 s (4.89 s on the re-run), the pre-existing chunk-size warning only | `docker compose exec -T frontend npx vite build` |
+| Smoke, Compose | 14 checks ok, `smoke ok`; readmission patient 801 `0.163 medium`; summary 1,262 + 273 tokens in 5,060 ms with 23 sources | `.venv/Scripts/python scripts/smoke.py` |
+| Automated check, Task 2 | 16 passed, 2 warnings (both runs `trained_on: local`, the cutline), 0 failed, exit 0, 18 s wall (includes `pytest -k "risk or early_warning"`: 28 passed in 7.78 s, and a fresh vite build scanned for the two secret values) | `.venv/Scripts/python scripts/check_submission.py --task 2` |
+| Automated check, Task 3 | 11 passed, 0 warnings, 0 failed, exit 0, 111 s wall; summary call 565 tokens in 3,688 ms; `usage_events` 185 -> 186; evals 10/10 at threshold 0.7 for 21,710 tokens; the second API container at port 8001 answered `stored: false` with `ai_store unavailable` and 429 at `LLM_DAILY_TOKEN_LIMIT=1`; `pytest -k tenant` 10 passed in 1.39 s | `.venv/Scripts/python scripts/check_submission.py --task 3` |
+| Automated check, Task 4 | see section 14 | `.venv/Scripts/python scripts/check_submission.py --task 4 --base http://localhost` |
+
+Two small fixes were needed for the automated check to pass on the reference, both made in this
+pass: `k8s/base/worker.yaml` gained a `readinessProbe` (the same heartbeat exec as its liveness
+probe; spec section 13 says every Deployment has both, and the checker follows it) and
+`docs/REPORT.md` was added with the rollback-drill transcript from section 14 (the checker
+requires the markers `rollout undo` and `ImagePullBackOff`). `k8s/base/kustomization.yaml` and
+`k8s/exercises/broken-api.yaml` now carry the tag `sha-d5956e4`, the hash of the commit the images
+were built from; the commit that adds this work has a different hash, which is the documented
+"the committed `newTag` never matches your fork" situation.
+
+`usage_events` after this pass (Compose database, all test runs included): `early-warning ok 44`,
+`readmission-risk ok 159`, `stay-summary ok 74 / limited 21 / error 18 / unconfigured 14`
+(`SELECT feature, status, count(*) FROM usage_events GROUP BY 1,2`).
+
+## 10. The early-warning model (deterioration within 12 hours)
+
+Trained by the GPU build agent on 2026-10-14 on this laptop's NVIDIA GeForce RTX 4090 (24,564 MiB
+per `nvidia-smi`, driver 610.60), Windows 11, Python 3.12.7, torch 2.6.0+cu124, numpy 2.5.3,
+pandas 2.3.3, scikit-learn 1.9.1, onnx 1.23.2 (the CUDA venv under `carescribe/.venv`, not the
+backend venv). These are laptop numbers. Nothing has been run on the lab's `g4dn.xlarge` (one T4,
+4 vCPUs): the T4 epoch time, the total run time and the 15-minute training budget on student pages
+are estimates until a live session confirms them; a T4 is slower than a 4090 and 4 vCPUs are slower
+than this machine's 24 threads, so the CPU-versus-GPU ratio there is unknown. The run record is
+`training/runs/2026-10-14-deterioration/training_run.json` and `train.log`; `training/data/`
+holds the export. The automated check (section 9) verified the hashes below.
+
+### 10a. Export (`.venv/Scripts/python training/export_vitals_hourly.py`, 3.5 s)
+
+| What | Value |
+|---|---|
+| Encounters | 1,783 discharged inpatient stays at DEMO, 791 patients; 16 open stays excluded (their length is not final); stays ending in death kept (the readmission export drops them; documented in both) |
+| Onset encounters | 193 (10.8%) by the reference rule: first hour at or after hour 12 with at least two of HR > 120, RR > 24, SpO2 < 90, SBP < 90, temperature > 38.5 |
+| Encounter-hours | 191,341 rows, 39,863 (20.8%) with at least one measurement; 232,118 vitals rows read |
+| Files | `vitals_hourly.csv` 3,858,287 bytes (3.68 MB), `encounters_static.csv` 182,616 bytes, `deterioration.columns.json` 1,488 bytes; 3.86 MB together, far under the 20 MB console-upload limit |
+| `data_sha256` | `0877aaca0e20...` (`sha256sum training/data/vitals_hourly.csv`) |
+
+### 10b. Reference training run
+
+```bash
+<carescribe venv python> training/train_deterioration.py --stride 1 --device cuda --time-one-epoch --out training/runs/2026-10-14-deterioration
+cp training/runs/2026-10-14-deterioration/deterioration.{onnx,json} models/
+.venv/Scripts/python training/check_onnx.py training/runs/2026-10-14-deterioration
+```
+
+| What | Value | Source |
+|---|---|---|
+| Windows at stride 1 | 145,989, of which 2,299 positive (prevalence 1.57%), built in 1.5 s (2.1 s in another run) | `train.log` |
+| Grouped split (by `patient_id`, test 0.2, validation 0.15 of train, seed 42) | train 101,464 windows / 537 patients; validation 17,325 / 95; test 27,200 / 159 (39 onset stays in test) | `training_run.json` `split` |
+| `pos_weight` | 64.9 (negatives per positive in the training windows) | `train.log` |
+| Epochs | 21 run, best epoch 15 (validation AP 0.8772), stopped by patience 6; fit 23.6 s | `train.log` |
+| Test metrics | AUROC 0.9896, average precision 0.8936, Brier 0.0200 (base-rate Brier 0.0169) | `metrics` |
+| Training-set metrics | AUROC 0.9985, average precision 0.945, Brier 0.0213 | `train_metrics` |
+| One epoch, same data and batch 512 | cpu 8.09 s (24 threads; 10.25 s and 11.3 s in two earlier runs), cuda 0.65 s (0.71 s and 0.86 s earlier) | `epoch_seconds`, `--time-one-epoch` |
+| Whole run | 37.8 s wall | `train.log` |
+| Alerts at the 0.20 threshold (test windows) | 1,810 alerts over 1,133.3 patient-days = 159.71 per 100 patient-days; 39 of 39 deteriorations caught (encounter-level sensitivity 1.0); window recall 0.94, window precision 0.2425; median lead time 15.0 h | `alert_detail` |
+| Artifact | `deterioration.onnx` 71,413 bytes (70 KB), opset 17, inputs `sequence` [batch, 24, 12] and `static` [batch, 4], one output `probability` [batch] (sigmoid inside the graph); `deterioration.json` 2,881 bytes | `ls -l models/` |
+| Hashes | onnx sha256 `5872e65386e45bacd355df8bb2b601158167753d9ca7d26f3f971cbf12fc476c` = `artifact_sha256`; identical across three runs of the same command (seed 42 makes the training deterministic) | `sha256sum models/deterioration.onnx` |
+| ONNX against torch | onnxruntime 1.31.0 reproduces the torch probabilities on ten saved test windows spanning the probability range within 2.88e-05 (tolerance 1e-4) | `training/check_onnx.py` |
+| `model_version`, `trained_on` | `deterioration-20261014-0877aaca`, `local` | `training_run.json` |
+
+Calibration, ten bins (bin, count, mean predicted, observed), from `training_run.json`:
+
+| Bin | Count | Mean predicted | Observed |
+|---|---|---|---|
+| 0.0-0.1 | 24,926 | 0.003 | 0.001 |
+| 0.1-0.2 | 464 | 0.145 | 0.006 |
+| 0.2-0.3 | 278 | 0.245 | 0.011 |
+| 0.3-0.4 | 199 | 0.343 | 0.015 |
+| 0.4-0.5 | 160 | 0.452 | 0.019 |
+| 0.5-0.6 | 181 | 0.553 | 0.028 |
+| 0.6-0.7 | 166 | 0.644 | 0.018 |
+| 0.7-0.8 | 133 | 0.748 | 0.007 |
+| 0.8-0.9 | 110 | 0.843 | 0.054 |
+| 0.9-1.0 | 583 | 0.987 | 0.712 |
+
+The ranking is good and the calibration is not: `pos_weight` of about 65 inflates every
+probability, so the observed rate sits far below the predicted one in every bin but the first, and
+the alert rate at the spec's 0.20 threshold is high. The lesson and REPORT.md should say so and
+use the threshold sweep the run record carries (`alert_table`, all on the test windows, all 39 of
+39 deteriorations caught at every threshold):
+
+| Threshold | Alerts per 100 patient-days | Median lead time (h) | Window precision |
+|---|---|---|---|
+| 0.20 | 159.71 | 15 | 0.2425 |
+| 0.35 | 124.68 | 14 | 0.3071 |
+| 0.50 | 103.50 | 13 | 0.3666 |
+| 0.70 | 72.88 | 13 | 0.5109 |
+| 0.80 | 61.15 | 13 | 0.6075 |
+| 0.90 | 51.44 | 11 | 0.7118 |
+| 0.95 | 46.41 | 11 | 0.7719 |
+
+### 10c. Other runs (reported by the GPU agent, not committed)
+
+| Run | Result |
+|---|---|
+| Rehearsal `--stride 4 --epochs 3 --device cuda` | 37,194 windows, 577 positive (1.55%); test AUROC 0.9888, AP 0.8829, Brier 0.0236; 61.32 alerts per 100 patient-days at 0.20; about 0.2 s per cuda epoch; 6.2 s wall |
+| Mask ablation `--stride 1 --device cuda --no-mask` | test AUROC 0.9878, AP 0.8709, Brier 0.0151; best epoch 1 of 7; 157.32 alerts per 100 patient-days at 0.20. The mask channel (nursing cadence) adds about 0.02 average precision |
+
+`training/requirements-gpu.txt` pins torch 2.6.0, numpy 2.0.2, pandas 2.2.3, scikit-learn 1.6.1
+and onnx 1.23.2 (the backend's pins plus torch and onnx); those five were not installed together
+in one fresh environment, and the reference run used the newer numpy, pandas and scikit-learn
+listed above. EC2 detection (IMDSv2 token, then the instance id) is copied from `train.py` and
+has not been exercised on a live instance.
+
+## 11. The document store
+
+Added by the store build agent on 2026-10-14; versions and counts observed in this pass.
+
+| What | Value | How |
+|---|---|---|
+| Server, driver | MongoDB 7.0.45 (`mongo:7` image), pymongo 4.18.3 | `docker compose exec -T mongo mongosh --quiet -u atlas -p ... --authenticationDatabase admin --eval "db.version()"`; `python -c "import pymongo; print(pymongo.version)"` in the backend container |
+| Collections | `predictions`, `generations`, `agent_runs`, `eval_runs` in `atlas_ai` | `db.getCollectionNames()` |
+| Indexes | `tenant_patient_created` `{tenant_id: 1, patient_id: 1, created_at: -1}` on `predictions`, `generations`, `agent_runs`; `tenant_created` on `eval_runs`; `created_at_ttl` on `predictions` with `expireAfterSeconds` 7,776,000 (90 days) | `db.predictions.getIndexes()` |
+| Documents on the Compose store after this pass | 117 predictions, 50 generations, 0 eval runs (the automated check runs `run_evals.py --no-store`; a run with `MONGO_URL` set writes one) | `countDocuments()` |
+| Tests | 8 in `backend/tests/test_ai_store.py`; the store-down test alone takes about 5.5 s (the 2,000 ms server-selection timeout, twice, plus the 0.5 s health ping) | `pytest -p no:warnings` |
+| Container memory, Compose (no wiredTiger cap) | 331.4 MiB right after the test and check runs (330.3 MiB reported by the store agent after its test run, 185.9 MiB idle a few minutes later) | `docker stats --no-stream` |
+| Timeouts | `serverSelectionTimeoutMS` 2000 on the client; `/health` wraps its ping in `pymongo.timeout(0.5)`; the api probes carry `timeoutSeconds: 3` so a store outage cannot fail readiness | `backend/app/ai_store.py`, `k8s/base/api.yaml` |
+| Host port | 27018 (`mongodb://atlas:<password>@localhost:27018/atlas_ai?authSource=admin`) | `docker-compose.yml` |
+| `/health` | `{"status":"ok","database":"ok","migrations":1,"ai_store":"ok"}`; `ai_store: unavailable` with `status` still `ok` when the store is unreachable (observed through the checker's second API container) | `curl -s localhost:8000/health` |
+| Frontend | `npx vite build` 5.49 s right after the store change (reported), 4.65 s in this pass; index JS 785.87 kB (gzip 220.40 kB), CSS 42.23 kB | `docker compose exec -T frontend npx vite build` |
+
+The `mongosh` login needs `--authenticationDatabase admin` (or `authSource=admin` in the URL):
+without it `mongosh -u atlas -p ... atlas_ai` answers `Authentication failed`, because the root
+user the image creates on first start lives in `admin`.
+
+## 12. Serving the early-warning model
+
+Observed by the serving build agent on 2026-10-14 on the Compose backend (uvicorn with `--reload`,
+`./backend` mounted) and re-checked in this pass where marked.
+
+| What | Observed | How |
+|---|---|---|
+| Startup with both models | lifespan 0.93 s: `Waiting for application startup` 11:08:18.669Z, readmission model loaded 11:08:19.495Z (includes opening the pool), early-warning model loaded 11:08:19.572Z, `Application startup complete` 11:08:19.602Z (reported); early-warning load logged at 76 ms then, 61 ms in this pass; `ensure_indexes` about 30 ms | `docker compose logs --timestamps backend` |
+| One request end to end, Compose | 9 to 16 ms (seven curl calls, reported); 10.1, 10.5 and 10.4 ms for patients 916, 343 and 135 in this pass | `curl -w '%{time_total}' localhost:8000/api/patients/<id>/risk/deterioration` |
+| `assess()` in process | 11.7 ms first call, 0.3 to 7.3 ms warm over 16 stays (host venv, reported) | scratch script, deleted |
+| Open DEMO inpatients at the time (16 stays; DEMO vitals frozen at 2026-10-11 17:52Z, wall clock 2026-10-14) | 15 `scored`, 1 `deteriorating` (encounter 8149, patient 916, onset at hour 191 of the stay, `as_of` 2026-10-05T17:40Z), 0 `insufficient_data`; probabilities min 0.000, median 0.000, max 0.981; 13 of 15 round to 0.006 or less; two alerts at 0.20 (patient 991 at 0.262, patient 135 at 0.981); `hours_of_vitals` 4 to 87; youngest scored stay 13 hours (reported) | scratch script against `localhost:5433` and `models/deterioration.onnx` |
+| Live RGH spot checks (reported) | hour 4 with 1 vitals hour and hour 9 with 3 vitals hours: `insufficient_data`; hours 209 and 337: `scored` 0.0 low | curl as `clinician@riverside.example` |
+| Other tenant | 404 `{"detail":"Patient not found"}` for a Harborview patient asked as Riverside, the same body as a missing id | `test_early_warning.py`, checker Task 2 |
+| Not applicable | 404 `{"detail":"not applicable: no open inpatient encounter"}` for a discharged patient | `test_early_warning.py` |
+| Model missing or wrong `MODEL_DETERIORATION_SHA256` | 503 `{"detail":"model not available"}` | `test_early_warning.py` |
+| History | `GET /api/patients/916/ai/history?feature=early-warning` lists the `deteriorating` documents newest first with `stored: true` (this pass) | curl |
+| Metering | `usage_events` feature `early-warning`, `predictions` 1 only when a probability was produced (0 for `insufficient_data` and `deteriorating`) | `test_early_warning.py` |
+| Image | `atlas-api` 944 MB with onnxruntime against 830 MB before (+114 MB: the onnxruntime 1.31.0 wheel is 23.76 MB, the installed package 68 MB plus coloredlogs, flatbuffers, protobuf and sympy); no torch in the image (`importlib.util.find_spec('torch')` is None); `/app/models` holds `deterioration.onnx` 71,413 B, `deterioration.json` 2,881 B and `readmission.joblib` | `docker images`, `docker run --rm atlas-api:sha-d5956e4 sh -c 'ls -la /app/models'` |
+
+Design facts a lesson will need: the as-of hour is the hour after the stay's latest vitals
+measurement (capped at the wall clock), not the wall clock itself, because the Test Facility is
+frozen on its seed day and the feed may run faster than real time; `hours_admitted` is the as-of
+hour index; `hours_of_vitals` counts stay hours with at least one measurement;
+`insufficient_data` means the as-of hour is below 12 or there are no vitals at all; the band uses
+the readmission thresholds (`ml.band`) and `alert` the json's 0.20; the backend repeats the grid,
+window, forward-fill, standardisation and onset code from `training/deterioration.py` (the image
+has no `training/`) and a test checks the serving constants against `models/deterioration.json`.
+
+## 13. Images after the change
+
+`docker images`, uncompressed SIZE, tag `sha-d5956e4` (the short hash of the commit before this
+one; built in this pass from the working tree with every builder's change in it):
+
+| Image | Size | Previous (`sha-c2e3970`) | Build time in this pass |
+|---|---|---|---|
+| `atlas-api` (backend/Dockerfile, includes `models/` with both artifacts) | 944 MB | 830 MB | 2 s (every layer cached from the Compose build minutes earlier; the serving agent's rebuild with the new pip layer was the real one) |
+| `atlas-web` (frontend/Dockerfile.prod) | 75.2 MB | 75.1 MB | 8 s |
+| `atlas-meridian` (feed/Dockerfile) | 236 MB | 236 MB | 1 s |
+
+## 14. The Kubernetes cluster with the document store (2026-10-14)
+
+The cluster was deleted and recreated from scratch in this pass with the three `sha-d5956e4` images,
+while the Compose stack kept running on the same machine. Context `kind-atlas`, node
+`atlas-control-plane` on `kindest/node:v1.37.0`, ingress-nginx from the pinned
+`controller-v1.15.1` kind manifest, `k8s/secret.env` generated from `secret.example.env` with a
+fresh `JWT_SECRET` (`openssl rand -hex 32`) and an empty `LLM_API_KEY`.
+
+```bash
+kind delete cluster --name atlas
+kind create cluster --name atlas --config k8s/kind-config.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/kind/deploy.yaml
+kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=180s
+kind load docker-image atlas-api:$TAG atlas-web:$TAG atlas-meridian:$TAG --name atlas
+kubectl apply -f k8s/base/namespace.yaml
+kubectl -n atlas create secret generic atlas-secrets --from-env-file=k8s/secret.env
+kubectl apply -k k8s/base
+```
+
+| Step | Observed | Earlier passes (section 6) |
+|---|---|---|
+| `kind delete cluster` | 3 s | 1 s |
+| `kind create cluster` | 17 s (node image already pulled) | 16 s, 35.9 s |
+| ingress-nginx controller rolled out | 39 s (`rollout status` waited properly this time) | about 1 min, 24.6 s |
+| `kind load` of three images (944 + 75 + 236 MB) | 23 s; a later reload of the rebuilt `atlas-api` alone 14 s | 30 s, 20 s |
+| Secret | `atlas-secrets Opaque DATA 6` | DATA 4 |
+| `kubectl apply -k k8s/base` | 17 objects: namespace unchanged, configmap, 5 services (api, db, meridian, mongo, web), 2 PVCs, 5 Deployments, StatefulSet mongo, Job atlas-seed, Ingress atlas; applied first time without the webhook error | |
+| `apply` to every pod Ready and the seed Job Complete (poll every 5 s) | 101 s | 103 s, 84 s |
+| Seed Job | `done in 95s`, Job DURATION 100 s; seeded 2026-10-14 (history 2024-10-14 to 2026-10-14): 1,234 patients, 8,454 encounters, 327,538 vitals, 197,340 labs, 9,969 orders, 77,938 administrations (the Compose database is still the 2026-10-11 seed, section 1, which is why its counts differ) | `done in 94s` |
+| Pods | api x2, web x2, db, meridian, worker, `mongo-0` all 1/1 Running with 0 restarts; atlas-seed Completed 0/1 | no mongo-0 |
+| PVCs | `pgdata` 2Gi, `meridian-data` 1Gi, `mongo-data-mongo-0` 1Gi, all Bound, StorageClass `standard` | two PVCs |
+| `rollout restart deploy/api deploy/worker` after reloading the rebuilt api image | both rolled out in 33 s | 23 s for four |
+| Node container memory | 2.571 GiB after everything was Ready, 2.686 GiB after the smoke run (`docker stats --no-stream`, `atlas-control-plane`); `kubectl -n atlas top pod` answers `Metrics API not available` (no metrics-server, as before) | |
+| `ingest_events` in the cluster database a minute after the seed | 24,320 processed, none failed | 24,513 |
+
+One finding from this pass, fixed in it: the api Pods start before `mongo-0` answers (the api's init
+container waits for Postgres only), so `ensure_indexes()` in the lifespan failed on both api Pods
+(`WARNING atlas.ai_store ai_store indexes not created, the store is unavailable
+(ServerSelectionTimeoutError)` at 11:41:06, three seconds after the models loaded) and the first
+writes created the `predictions` collection with only its `_id_` index: no TTL, no compound index.
+`ai_store.py` now remembers whether the indexes were created and the first successful write creates
+them when the startup attempt failed (`create_index` is idempotent); `test_ai_store.py` gained a
+test for it (70 backend tests now). After the api image was rebuilt, reloaded and restarted,
+`mongo-0` showed `_id_`, `tenant_patient_created` and `created_at_ttl ttl=7776000` on
+`predictions`. The gotcha is written down in `k8s/README.md` and `docs/AI_STORE.md`.
+
+Ladder of proof through the Ingress, all on http://localhost:
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `kubectl -n atlas get pods`, `get pvc` | table above; `mongo-0` present |
+| 2 | `kubectl -n atlas get jobs` | `atlas-seed Complete 1/1 100s` |
+| 3 | `curl -s localhost/health` | `{"status":"ok","database":"ok","migrations":1,"ai_store":"ok"}` in 0.212 s |
+| 3 | `curl -s localhost/health/live` | `{"status":"alive"}` in 0.207 s |
+| 4 | `GET /api/facilities` without a token | 401 |
+| 4 | `POST /api/auth/login` (clinician@riverside.example) | 200, token of 155 characters |
+| 4 | `GET /api/facilities` with the token | DEMO 1,234 patients, RNC 336, RGH 471 |
+| 5 | `curl -s localhost/`, `localhost/config.js` | 200 text/html; `window.__ATLAS_CONFIG__ = { apiUrl: "" };` (same origin) |
+| 5 | `localhost/docs`, `localhost/openapi.json` | 200; the schema lists `/api/patients/{patient_id}/risk/readmission`, `.../risk/deterioration`, `.../summary` and `.../ai/history` |
+| 6 | `GET /api/integrations` as admin@riverside.example | RNC active, watermark 1,650, 0 deferred, 0 failed; RGH active |
+| 7 | `kubectl -n atlas logs deploy/worker --tail=5` | `applied batch of 500: {'processed': 497, 'deferred': 3}`, `applied batch of 398`, then batches of 7, 5 and 14 as events arrive |
+| 7 | env names inside the worker pod | `POSTGRES_PASSWORD`, `MERIDIAN_API_KEY`, `DATABASE_URL`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_URL` and no `JWT_SECRET` or `LLM_API_KEY` (least privilege, now six names) |
+| AI | api pod log | `model readmission-20261011-870b90fb loaded`, `early-warning model deterioration-20261014-0877aaca loaded from /app/models/deterioration.onnx in 292 ms` on the first start (180 ms after the restart; 61 to 76 ms on Compose: the pod has a 500m CPU limit), no JWT warning (fresh secret) |
+| AI | `GET /api/patients/{199,35,403}/risk/deterioration` (the three oldest open DEMO inpatient stays in the cluster database) | 200 `scored` 0.0 low (hour 145, 22 hours of vitals) in 0.252 s; 0.029 low (hour 113, 18) in 0.235 s; 0.0 low (hour 89, 15) in 0.220 s; every answer `stored: true`, `as_of` on 2026-10-14 because this database was seeded today |
+| AI | `GET /api/patients/199/ai/history?feature=early-warning&limit=5` | `{items: [the score just written, state scored], stored: true}` |
+| AI | `GET /api/patients/801/risk/readmission` | 200, `0.163 medium readmission-20261011-870b90fb` (same patient and score as on Compose: the seed is deterministic up to the shift) |
+| AI | `POST /api/patients/801/summary` | 503 `{"detail":"no model configured"}` (empty `LLM_API_KEY` in the cluster Secret) |
+| Tenant | the three calls above as clinician@harborview.example | 404 `{"detail":"Patient not found"}` for the risk and the history route |
+| Store | `mongosh` inside `mongo-0` | 4 predictions and 0 generations after the ladder; indexes as above after the fix |
+| Smoke | `.venv/Scripts/python scripts/smoke.py --base http://localhost` | `smoke ok`: 12 ok, 2 skips (Meridian health, no Ingress route; stay summary, no key); readmission patient 167 `0.379 high`; 25 s wall (the 0.21 s per request port-mapping floor from section 6 still holds) |
+| Check | `.venv/Scripts/python scripts/check_submission.py --task 4 --base http://localhost` | 15 passed, 0 warnings, 0 failed, exit 0, 26 s wall (11 manifest files, 17 kustomize objects, 9 pods Ready with mongo-0, smoke through the Ingress, `docs/REPORT.md` markers) |
+
+Rollback drill, run twice in this pass (transcript in `docs/REPORT.md`): `set image deploy/api
+api=atlas-api:sha-bad` adds a third api pod that goes `PodInitializing` (the init container still
+uses the good tag), `ErrImagePull` at 38 s and `ImagePullBackOff` at about 40 s, while the two old
+pods keep serving and `/health` keeps answering; `rollout status --timeout=30s` ends with
+`error: timed out waiting for the condition`; `rollout undo` returns the image to
+`atlas-api:sha-d5956e4` and the bad pod is terminated within a few seconds. The broken Deployment
+exercise was not re-run.
+
+## 15. Tooling versions added in this pass
+
+pymongo 4.18.3, MongoDB 7.0.45 (`mongo:7`), onnxruntime 1.31.0 (CPU wheel, in the api image),
+onnx 1.23.2 and torch 2.6.0+cu124 (training only, in the CUDA venv; the api image has no torch),
+ruff 0.9.6 (the backend container's version, also installed into `.venv` to lint `training/`).
+kind, kubectl, kustomize, node image, ingress-nginx and Docker are the versions in section 7;
+the pinned `controller-v1.15.1` manifest URL applied cleanly in this pass.

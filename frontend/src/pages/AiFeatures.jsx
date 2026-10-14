@@ -1,11 +1,11 @@
-import { Activity, ChevronRight, Code2, FlaskConical, LayoutDashboard, MessageSquareText, ShieldCheck, Sparkles, UserRound } from "lucide-react";
+import { Activity, ChevronRight, Code2, Database, FlaskConical, HeartPulse, LayoutDashboard, MessageSquareText, ShieldCheck, Sparkles, UserRound } from "lucide-react";
 import { Link } from "react-router-dom";
 import { getFacilities } from "../api/client";
 import { Card, PageHeader, PanelSkeleton, Retry } from "../components";
 import { useApi, useDocumentTitle } from "../hooks";
 import { formatNumber } from "../lib/format";
 
-// This page is the map of Atlas's AI features: the two that ship with the reference platform,
+// This page is the map of Atlas's AI features: the three that ship with the reference platform,
 // the clinical questions and generative features a team can build next, the data every
 // feature reads, and the seams in the code where a new one plugs in.
 
@@ -17,6 +17,14 @@ const BUILT = [
     text: "For a patient whose inpatient or observation stay has ended: the chance of another admission within 30 days, as a probability and a band (low, medium, high). A scikit-learn model trained on the Test Facility's history. It appears in the AI insights section of the patient record.",
     states: "Shows a loading state, a 'not applicable' state when the patient has no finished stay, a 'model unavailable' state, and a low-confidence note in the medium band.",
     route: "GET /api/patients/{id}/risk/readmission",
+  },
+  {
+    icon: HeartPulse,
+    title: "Early warning",
+    kind: "Predictive",
+    text: "For an inpatient who is admitted right now: the chance that their vitals cross the deterioration line (two or more of heart rate above 120, respiratory rate above 24, SpO2 below 90, systolic pressure below 90, temperature above 38.5 \u00b0C) within the next 12 hours. A PyTorch sequence model over the last 24 hours of vitals, trained on a GPU, exported to ONNX and served on CPU. The two cards cover the two halves of a stay: this one while the patient is here, the readmission card after discharge.",
+    states: "Shows a loading state, 'not applicable' when no inpatient stay is open, 'not enough data yet' before 12 hours of vitals, 'already deteriorating' when the line has been crossed (no forecast), 'model unavailable', and a low-confidence note in the medium band.",
+    route: "GET /api/patients/{id}/risk/deterioration",
   },
   {
     icon: MessageSquareText,
@@ -33,7 +41,7 @@ const BUILT = [
 const PREDICTIVE_MENU = [
   { code: "A", question: "Readmission within 30 days", unit: "One finished inpatient or observation stay", when: "At discharge", note: "Built here" },
   { code: "B", question: "Prolonged stay", unit: "One inpatient stay", when: "24 hours after admission", note: "Longer than the Test Facility median for that admission type" },
-  { code: "C", question: "Deterioration during the stay", unit: "One inpatient stay", when: "12 hours after admission", note: "A vital sign crossing a threshold you define and write down" },
+  { code: "C", question: "Deterioration during the stay", unit: "One inpatient stay", when: "12 hours after admission", note: "Built here as the early-warning model (fixed for everyone); a vital sign crossing a threshold you define and write down" },
   { code: "D", question: "Discharge to somewhere other than home", unit: "One inpatient stay", when: "24 hours after admission", note: "Disposition not home or home health" },
   { code: "E", question: "Your own question", unit: "You define it", when: "You define it", note: "Approved by your reviewer first" },
 ];
@@ -52,7 +60,7 @@ const PLACES = [
   {
     icon: UserRound,
     title: "Patient record",
-    text: "The AI insights section beside vitals, labs and medications. Both built features live here.",
+    text: "The AI insights section beside vitals, labs and medications. All three built features live here, each with the last five outputs it stored for that patient.",
   },
   {
     icon: LayoutDashboard,
@@ -88,14 +96,28 @@ const SEAMS = [
     path: "backend/app/routers/",
     text: (
       <>
-        One file per feature, registered in <Code>backend/app/main.py</Code>. <Code>risk.py</Code> and <Code>summary.py</Code> are
-        the two built ones; copy their shape.
+        One file per feature, registered in <Code>backend/app/main.py</Code>. <Code>risk.py</Code>, <Code>early_warning.py</Code> and{" "}
+        <Code>summary.py</Code> are the three built ones; copy their shape.
       </>
     ),
   },
   {
     path: "backend/app/ml.py",
     text: "The model's feature SQL, shared by the training export and the route, plus load_model() and the band thresholds.",
+  },
+  {
+    path: "backend/app/ml_deterioration.py",
+    text: "The early-warning model: the ONNX session, the hourly grid and 24-hour window for one patient, and the onset rule behind the 'deteriorating' state, kept in step with training/deterioration.py.",
+  },
+  {
+    path: "backend/app/ai_store.py",
+    text: (
+      <>
+        The document store (MongoDB): <Code>record_prediction()</Code> and <Code>record_generation()</Code> write one document per output,
+        scoped by tenant, under the same <Code>request_id</Code> as the metering row; <Code>history()</Code> feeds the &quot;Earlier outputs&quot;
+        list on every card. A store that is down never breaks a route: the response says <Code>stored: false</Code>.
+      </>
+    ),
   },
   {
     path: "backend/app/llm.py",
@@ -111,8 +133,9 @@ const SEAMS = [
     path: "frontend/src/panels/",
     text: (
       <>
-        A card per feature, listed in the AI insights section of <Code>frontend/src/pages/PatientDetail.jsx</Code>. <Code>RiskCard.jsx</Code>{" "}
-        and <Code>SummaryCard.jsx</Code> show every state a card must handle.
+        A card per feature, listed in the AI insights section of <Code>frontend/src/pages/PatientDetail.jsx</Code>. <Code>RiskCard.jsx</Code>,{" "}
+        <Code>EarlyWarningCard.jsx</Code> and <Code>SummaryCard.jsx</Code> show every state a card must handle; <Code>EarlierOutputs.jsx</Code> is
+        the shared history list.
       </>
     ),
   },
@@ -127,7 +150,7 @@ const SEAMS = [
   },
   {
     path: "training/, models/, evals/",
-    text: "The export and training scripts with each run's evidence, the trained artifact the API serves, and the golden set with its evaluators.",
+    text: "The export and training scripts with each run's evidence (a CPU run for the readmission model, a GPU run for the early-warning model), the trained artifacts the API serves (joblib, and ONNX with its json), and the golden set with its evaluators.",
   },
 ];
 
@@ -241,7 +264,7 @@ export default function AiFeatures() {
     <div className="space-y-6">
       <PageHeader
         title="AI features"
-        description="Two features ship with Atlas. This page explains them, lists what a team can build next, and shows where a new feature plugs in."
+        description="Three features ship with Atlas: two predictive, one generative. This page explains them, lists what a team can build next, and shows where a new feature plugs in."
       />
 
       <section aria-labelledby="built-heading">
@@ -249,7 +272,7 @@ export default function AiFeatures() {
           <Sparkles aria-hidden="true" className="h-4 w-4 text-brand-600" />
           Built into the reference platform
         </h2>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           {BUILT.map((f) => (
             <div key={f.title} className="card p-5">
               <div className="flex items-start justify-between gap-3">
@@ -268,8 +291,17 @@ export default function AiFeatures() {
           ))}
         </div>
         <p className="mt-3 text-sm text-ink-600">
-          Open any patient record to see both cards. The model behind the risk score was trained on the Test Facility; the summary
-          needs a language-model key on the server, and says so when there is none.
+          Open any patient record to see the three cards. Both models were trained on the Test Facility; the summary needs a
+          language-model key on the server, and says so when there is none.
+        </p>
+        <p className="mt-2 flex items-start gap-2 text-sm text-ink-600">
+          <Database aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-brand-700" />
+          <span>
+            Every score and every summary is also written as a document to a separate store (MongoDB), scoped to your organisation,
+            and each card lists the last five outputs it holds for that patient under &quot;Earlier outputs&quot;. Scores expire after 90
+            days; generated text is kept. The clinical record itself stays in PostgreSQL, and the cards keep working, and say so, when the
+            store is down.
+          </span>
         </p>
       </section>
 

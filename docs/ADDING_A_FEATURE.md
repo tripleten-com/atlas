@@ -107,7 +107,10 @@ Then add it to the panel list in `frontend/src/pages/PatientDetail.jsx`:
 
 ## 4. For AI features
 
-The two features that ship with Atlas are the worked example. Read them in this order and copy
+The three features that ship with Atlas are the worked example (the table shows the two you will
+replace or add to; the early-warning model in `routers/early_warning.py`, `ml_deterioration.py`,
+`EarlyWarningCard.jsx` and `test_early_warning.py` follows the predictive column exactly, with an
+ONNX file instead of a joblib). Read them in this order and copy
 their shape rather than starting from the sketch above.
 
 | Piece | Predictive: readmission risk | Generative: stay summary |
@@ -118,6 +121,7 @@ their shape rather than starting from the sketch above.
 | Panel | `frontend/src/panels/RiskCard.jsx` | `frontend/src/panels/SummaryCard.jsx` |
 | Tests | `backend/tests/test_risk.py` | `backend/tests/test_summary.py` (stubbed `llm.chat`) |
 | Evidence | `training/` and `models/readmission.joblib` | `evals/golden.jsonl`, `evals/run_evals.py` |
+| Stored output | `ai_store.record_prediction()` in the route | `ai_store.record_generation()` in the route |
 
 Both panels are listed in the `AiInsights` section of `frontend/src/pages/PatientDetail.jsx`
 and exported from `frontend/src/panels/index.js`.
@@ -161,6 +165,33 @@ and exported from `frontend/src/panels/index.js`.
   medication is named that is not in the rows, the required shape is present. Set a pass
   threshold and record the pass rate.
 
+### Recording the output in the document store
+
+Every AI output is also a document in MongoDB (`backend/app/ai_store.py`, `docs/AI_STORE.md`),
+which is where the card's "Earlier outputs" list comes from. Right after `record_usage()`, call
+the matching `record_*()` with the same `request_id` (`str(uuid.uuid4())`, passed to both) and
+put its return value in the response as `stored`:
+
+```python
+request_id = str(uuid.uuid4())
+record_usage(conn, user, feature=FEATURE, model=model_version, predictions=1, elapsed_ms=elapsed_ms, request_id=request_id)
+stored = ai_store.record_prediction(
+    user.tenant_id, request_id, feature=FEATURE, model_version=model_version,
+    patient_id=patient_id, encounter_id=encounter_id, probability=probability, band=band,
+    inputs=row, state="scored",
+)
+```
+
+`record_prediction()` is for scores, `record_generation()` for text (pass the `sources` so the
+history keeps what the model saw), `record_agent_run()` for a tool loop. All of them return
+`False` instead of raising when the store is down, so the route never fails because of it; the
+field `stored: bool = True` on your response schema tells the card. Use your feature name
+(`feature="early-warning"`) and give the card `<EarlierOutputs patientId={patientId}
+feature="early-warning" refreshKey={data} />` under the result; the history route filters by
+that name. Add two tests, as `backend/tests/test_ai_store.py` does: after one call a document
+exists with the caller's `tenant_id`, and `GET /api/patients/{id}/ai/history` for the other
+organisation's patient is the same 404 as for a missing id.
+
 ### The states a panel must show
 
 A clinician will press the button or open the record when the model is down, the patient does
@@ -177,6 +208,7 @@ blank card. `RiskCard.jsx` and `SummaryCard.jsx` handle every row of this table:
 | Daily limit reached | 429 | `Empty` saying the organisation's budget for today is spent |
 | Any other error | network, 500, 502 | `Retry` with the error and a button that calls again |
 | Idle (generative only) | before the clinician asks | a button and one sentence on what pressing it does; nothing is called until then |
+| History unavailable | the history route answers `stored: false` (the document store is down) | `EarlierOutputs` says so in words instead of showing an empty list |
 
 Every card also carries the same cross-tenant guarantee as the rest of the record: another
 organisation's patient id is a 404 before any model runs.

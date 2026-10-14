@@ -1,0 +1,19 @@
+# Training pins for the early-warning model (train_deterioration.py). Training only: the API
+# never imports torch; it serves the exported graph with onnxruntime, which is pinned in
+# backend/requirements.txt, not here.
+#
+# torch: the GPU instance needs a CUDA build. The "Deep Learning OSS Nvidia Driver AMI GPU
+# PyTorch" ships one in its conda environment (`source activate pytorch`), so there install
+# only the lines below torch and keep the AMI's torch:
+#     pip install numpy pandas scikit-learn onnx     (the versions below)
+# On the "Deep Learning Base" AMI (drivers and CUDA, no PyTorch) or any plain Linux box with an
+# NVIDIA driver, pip's default index gives a CPU-only torch; use PyTorch's CUDA 12.4 index instead:
+#     pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+# then install the rest from this file. On a laptop without a GPU the default index is fine and
+# --device cpu works; it is just slower.
+torch==2.6.0
+numpy==2.0.2
+pandas==2.2.3
+scikit-learn==1.6.1
+# onnx is needed only to write and check the exported graph
+onnx==1.23.2

@@ -20,6 +20,14 @@ x-backend-env: &backend-env
   MERIDIAN_BASE_URL: http://meridian:8100
   MERIDIAN_API_KEY: ${MERIDIAN_API_KEY:-mcx-dev-key}
   MERIDIAN_CALLBACK_URL: http://backend:8000/api/integrations/webhooks/meridian
+  # the two served model files (./models is mounted over /app/models below)
+  MODEL_PATH: ${MODEL_PATH:-/app/models/readmission.joblib}
+  MODEL_DETERIORATION_PATH: ${MODEL_DETERIORATION_PATH:-/app/models/deterioration.onnx}
+  # the document store for AI outputs (see docs/AI_STORE.md). The URL carries the dev placeholder
+  # from .env.example; authSource=admin because the root user lives in the admin database.
+  MONGO_URL: mongodb://${MONGO_USER:-atlas}:${MONGO_PASSWORD:-atlas-dev-only}@mongo:27017/${AI_STORE_DB:-atlas_ai}?authSource=admin
+  AI_STORE_DB: ${AI_STORE_DB:-atlas_ai}
+  AI_STORE_PREDICTION_TTL_DAYS: ${AI_STORE_PREDICTION_TTL_DAYS:-90}
   WATCHFILES_FORCE_POLLING: "true"
 
 services:
@@ -37,6 +45,25 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atlas} -d ${POSTGRES_DB:-atlas}"]
       interval: 5s
       timeout: 3s
+      retries: 20
+
+  # MongoDB holds the AI outputs (predictions, generated text, eval runs); the clinical record
+  # stays in Postgres. Port 27018 on your machine so it sits beside any other MongoDB you run:
+  #   mongosh "mongodb://atlas:atlas-dev-only@localhost:27018/atlas_ai?authSource=admin"
+  # The backend keeps answering when this service is down; see docs/AI_STORE.md.
+  mongo:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-atlas}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-atlas-dev-only}
+    ports:
+      - "${MONGO_PORT:-27018}:27017"
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
       retries: 20
 
   # One-shot: migrate the schema and seed the Test Facility, then exit. The API and the worker
@@ -75,6 +102,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      mongo:
+        condition: service_healthy   # only at start; the API keeps running if mongo dies later
       seed:
         condition: service_completed_successfully
 
@@ -129,4 +158,5 @@ services:
 
 volumes:
   pgdata:
+  mongodata:
   meridian_data:

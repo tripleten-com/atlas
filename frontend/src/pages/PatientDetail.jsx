@@ -4,6 +4,7 @@ import { Empty, PanelBoundary, Retry, Skeleton, Tabs } from "../components";
 import { useDocumentTitle, usePatient } from "../hooks";
 import {
   ActiveMedicationsPanel,
+  EarlyWarningCard,
   EncountersPanel,
   LabsPanel,
   LatestVitalsPanel,
@@ -184,6 +185,9 @@ function AiInsights({ patientId }) {
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <PanelBoundary name="Readmission risk">
           <RiskCard patientId={patientId} />
+        </PanelBoundary>
+        <PanelBoundary name="Early warning">
+          <EarlyWarningCard patientId={patientId} />
         </PanelBoundary>
         <PanelBoundary name="Stay summary">
           <SummaryCard patientId={patientId} />

@@ -2,16 +2,17 @@
 
 Atlas is a multi-tenant patient-management platform: one deployment, many customer
 organisations, each seeing only its own records. It is also the reference platform students
-fork for their capstone, so this page covers the platform, the two AI features that ship with
+fork for their capstone, so this page covers the platform, the three AI features that ship with
 it, and the two ways the stack runs (Compose for development, Kubernetes for deployment).
 
 ## Services
 
-`docker compose up --build` starts six containers, one of which exits on purpose.
+`docker compose up --build` starts seven containers, one of which exits on purpose.
 
 | Service | What it is | Port | Code |
 |---|---|---|---|
 | `db` | PostgreSQL 16 | 5433 on your machine | `backend/app/migrations/` |
+| `mongo` | MongoDB 7, the document store for AI outputs (predictions, generated text, eval runs); the clinical record stays in Postgres | 27018 on your machine | `backend/app/ai_store.py`, `docs/AI_STORE.md` |
 | `seed` | One-shot: applies migrations and seeds the Test Facility, then exits 0. The API and the worker wait for it (`service_completed_successfully`). Harmless to run again: it leaves a seeded database alone. | none | `backend/app/seed.py` |
 | `backend` | FastAPI app: the Atlas API | 8000 (`/docs`) | `backend/app/` |
 | `worker` | Ingestion worker, same image as the backend | none | `backend/app/ingest/worker.py` |
@@ -45,14 +46,18 @@ atlas/
 │   │   ├── schemas.py         Pydantic request and response models
 │   │   ├── reference.py       vital-sign ranges and labels
 │   │   ├── metering.py        record_usage(): one usage_events row per AI call
+│   │   ├── ai_store.py        the MongoDB document store for AI outputs: record_*(), history(), status()
 │   │   ├── ml.py              readmission model: feature SQL, load_model(), bands
+│   │   ├── ml_deterioration.py  early-warning model: onnxruntime session, hourly window, onset rule
 │   │   ├── llm.py             OpenAI-compatible client: configured(), chat()
 │   │   ├── migrate.py         applies migrations/*.sql in order; wait_for_db()
 │   │   ├── seed.py            organisations, users, Test Facility history
 │   │   ├── migrations/        0001_init.sql ...
 │   │   ├── routers/           one file per area: patients, encounters, dashboard, results,
 │   │   │                      activity, integrations, facilities, org, session, health,
-│   │   │                      risk (predictive feature), summary (generative feature)
+│   │   │                      risk (predictive feature), early_warning (the second predictive
+│   │   │                      feature), summary (generative feature), ai_history (earlier AI
+│   │   │                      outputs from the document store)
 │   │   └── ingest/            meridian.py (client + signatures), store.py (raw events,
 │   │                          watermark), processor.py (event -> rows), worker.py
 │   └── tests/                 pytest, runs against the seeded database
@@ -69,7 +74,8 @@ atlas/
 │       ├── components/        Card, Badge, Tabs, Spinner, Skeleton, Retry, Empty, Button, ...
 │       ├── layout/AppShell.jsx    sidebar, top bar, facility switcher
 │       ├── pages/             one file per route; AiFeatures.jsx is the map of the AI features
-│       └── panels/            the cards on the patient record, including RiskCard and SummaryCard
+│       └── panels/            the cards on the patient record, including RiskCard, EarlyWarningCard,
+│                              SummaryCard and the EarlierOutputs list they share
 ├── training/                  export_training_set.py, train.py, CODIO.md, data/, runs/<date>/
 ├── models/                    the trained artifact the API serves (mounted or baked in at /app/models)
 ├── evals/                     golden.jsonl, make_golden.py, run_evals.py for the generative feature
@@ -141,10 +147,13 @@ from `encounters` dates.
 To change the schema, add `0002_<name>.sql`. Migrations run in order when the seed service
 (or the seed Job) starts and never run twice.
 
-## The two AI features
+## The three AI features
 
-Both sit in the AI insights section of the patient record, both go through the request path
-above (token, tenant check, bound SQL), and both write one `usage_events` row per call.
+All three sit in the AI insights section of the patient record, all go through the request path
+above (token, tenant check, bound SQL), and all write one `usage_events` row per call and one
+document to the AI store under the same `request_id` (the section after them). The two predictive
+cards split a patient's time in Atlas between them: the readmission card answers for a stay that
+has ended, the early-warning card for a stay that is open now.
 
 ### Readmission risk (predictive)
 
@@ -186,6 +195,35 @@ Test Facility rows ──▶ ml.encounter_features() ──▶ CSV      patient 
   `node_modules` out of the build context, so even a careless `COPY . .` could not bake a key
   into `atlas-api` or `atlas-meridian`.
 
+### Early warning (predictive, the same for every student)
+
+```
+training time (torch, GPU)                               request time (onnxruntime, CPU)
+vitals_hourly.csv + encounters_static.csv                patient id ──▶ open inpatient encounter (tenant-filtered SQL)
+  ──▶ hourly grid, 24-hour windows from hour 12,            ──▶ its vitals rows ──▶ the same grid and window code
+      onset label within 12 h, grouped split                   in ml_deterioration.py, standardised with the
+  ──▶ GRUNet ──▶ deterioration.onnx + deterioration.json       means and stds from deterioration.json
+                 (onset rule, feature order, means, stds,  ──▶ onset rule already fired?  state "deteriorating"
+                  alert threshold)                         ──▶ as-of hour below 12 or no vitals?  "insufficient_data"
+                                                           ──▶ otherwise probability, band, alert   "scored"
+```
+
+- `training/deterioration.py` holds the definitions (onset rule, window builder, standardiser,
+  `GRUNet`); `backend/app/ml_deterioration.py` repeats the grid, window and rule code because the
+  api image carries no `training/` and no torch, and reads the rule, feature order, means, stds
+  and alert threshold from `models/deterioration.json` next to the graph. A test
+  (`test_early_warning.py`) checks the json against the serving constants and the ONNX inputs
+  (`sequence` [batch, 24, 12], `static` [batch, 4]) and output (`probability`).
+- The window ends at the hour after the stay's latest vitals measurement (capped at the wall
+  clock), so the frozen Test Facility and a fast-running feed both get a window with data in it;
+  the response says which hour it scored (`as_of`, `window_start`, `window_end`).
+- `GET /api/patients/{id}/risk/deterioration` answers 404 "not applicable: no open inpatient
+  encounter", 200 with `state` `insufficient_data` or `deteriorating` and no probability, 200
+  `scored` with probability, band (the readmission thresholds) and `alert` (at or above the
+  json's 0.20), or 503 "model not available". Every 200 is metered (`predictions` 1 only when a
+  probability was produced) and written to the store; `EarlyWarningCard.jsx` shows each state and
+  the last five earlier scores from the history route.
+
 ### Stay summary (generative)
 
 ```
@@ -212,6 +250,36 @@ patient id ──▶ summary.fetch_grounding()  encounter + last vital per measu
   what the route sends.
 - `backend/tests/test_summary.py` stubs `llm.chat` so the tests never call a real endpoint.
 
+## The document store
+
+```
+routers/risk.py     ──▶ record_usage(request_id)  ──▶ Postgres usage_events        (metering, the Usage page)
+routers/summary.py  ──▶ ai_store.record_*(request_id) ──▶ MongoDB atlas_ai         (the output itself)
+                                  │   predictions  (TTL: AI_STORE_PREDICTION_TTL_DAYS)
+                                  │   generations, agent_runs, eval_runs  (kept)
+                                  ▼
+routers/ai_history.py: GET /api/patients/{id}/ai/history ──▶ {items, stored} ──▶ EarlierOutputs.jsx
+```
+
+The clinical record stays relational in PostgreSQL. What the AI features produce goes to MongoDB
+(`backend/app/ai_store.py`, database `atlas_ai`): every document carries `tenant_id`,
+`created_at`, `feature`, `model_version` and `request_id`, and the `request_id` is the same one
+on the Postgres `usage_events` row, so one request can be followed across both stores. Predictions
+expire through a TTL index; generated text is kept. The reasons for a second store, and the
+reasons JSONB would also have worked, are in `docs/AI_STORE.md`.
+
+Three rules the code follows:
+
+- Every read filters by the caller's `tenant_id` from the token before anything else, as
+  `tenancy.py` does for SQL; the history route also runs `load_patient()` first, so another
+  organisation's patient is a 404 before the store is touched.
+- A store that is down never breaks a route. The client is lazy with a two-second timeout, every
+  write is wrapped and returns a boolean that the response carries as `stored`, the warning is
+  logged at most once a minute, and `/health` adds `ai_store: ok|unavailable` while keeping
+  `status: ok`. The cards say "history unavailable" instead of showing an empty list.
+- Writes are fire-and-forget: the metering row first, then the document. A crash between the two
+  loses the document, by design; `request_id` is how the two are reconciled.
+
 ## Environment
 
 Settings are read once in `backend/app/config.py`; every one has a development default so a
@@ -235,6 +303,9 @@ and the Secret `atlas-secrets`.
 | `LLM_MODEL` | `Qwen/Qwen3-235B-A22B-Instruct-2507` | api | |
 | `LLM_API_KEY` | empty (the summary route answers 503 until set) | api | yes |
 | `LLM_DAILY_TOKEN_LIMIT` | `200000` input plus output tokens per tenant per UTC day | api | |
+| `MONGO_URL` | `mongodb://atlas:atlas-dev-only@localhost:27018/atlas_ai?authSource=admin` (Compose and Kubernetes assemble it from `MONGO_USER` and `MONGO_PASSWORD`) | api, worker | holds the password |
+| `AI_STORE_DB` | `atlas_ai` | api | |
+| `AI_STORE_PREDICTION_TTL_DAYS` | `90`: how long a `predictions` document is kept | api | |
 | `VITE_API_URL` | `http://localhost:8000` (cluster: empty, meaning same origin as the page) | frontend (dev: build time; prod image: written to `config.js` at start) | |
 
 ## Kubernetes topology
@@ -256,10 +327,12 @@ and the Secret `atlas-secrets`.
    Deployment worker x1 (atlas-api, python -m app.ingest.worker, liveness = heartbeat file age)
    Deployment meridian x1 (atlas-meridian) ── Service meridian:8100 ── PVC meridian-data 1Gi
    Deployment db x1 (postgres:16-alpine, Recreate) ── Service db:5432 ── PVC pgdata 2Gi
+   StatefulSet mongo x1 (mongo:7, Pod mongo-0) ── headless Service mongo:27017 ── PVC mongo-data-mongo-0 1Gi
    Job atlas-seed (atlas-api, python -m app.seed) runs once, then is removed after 10 minutes
 
    ConfigMap atlas-config: every non-secret variable above      Secret atlas-secrets: POSTGRES_PASSWORD,
-   (created from k8s/base/configmap.yaml)                       JWT_SECRET, MERIDIAN_API_KEY, LLM_API_KEY
+   (created from k8s/base/configmap.yaml)                       JWT_SECRET, MERIDIAN_API_KEY, LLM_API_KEY,
+                                                                MONGO_USER, MONGO_PASSWORD
                                                                 (created from the gitignored k8s/secret.env)
 
    Meridian ──webhooks──▶ http://api:8000/api/integrations/webhooks/meridian (MERIDIAN_CALLBACK_URL)
@@ -292,7 +365,9 @@ stream needs the Ingress annotation `proxy-read-timeout: "3600"`, which `ingress
   `Empty`, so every panel behaves the same way. AI panels add the states their route can
   answer with: `RiskCard` shows not-applicable (404), model unavailable (503) and a
   low-confidence note for the medium band; `SummaryCard` shows no model configured (503),
-  daily limit reached (429), not applicable (404) and a Sources toggle on success.
+  daily limit reached (429), not applicable (404) and a Sources toggle on success. Both end
+  with `EarlierOutputs`, the last five documents from the AI store, which says "history
+  unavailable" when the store could not be read.
 - Styling is Tailwind plus a few component classes in `src/index.css` (`card`, `btn`,
   `badge`, `field`, `data-table`). Charts use Recharts.
 - Colour never carries meaning alone: every flag has a text label.

@@ -22,18 +22,21 @@ so the UI can show where each fact came from, and `evals/run_evals.py` checks th
 and medication in the text is in those rows.
 
 Every call is metered with record_usage(), including the ones that fail or are refused, which is
-what the Usage page and the daily ceiling count.
+what the Usage page and the daily ceiling count. A successful answer is also written to the AI
+store as a `generations` document (text, sources, tokens) under the same request_id as the usage
+row; when the store is down the route still answers and `stored` is false.
 """
 from __future__ import annotations
 
 import logging
 import time
+import uuid
 from dataclasses import dataclass, field
 
 from fastapi import APIRouter, Depends, HTTPException
 from psycopg import Connection
 
-from .. import llm
+from .. import ai_store, llm
 from ..auth import CurrentUser, get_current_user
 from ..config import settings
 from ..db import fetch_all, fetch_one, get_db
@@ -224,9 +227,17 @@ def stay_summary(
         raise HTTPException(status_code=502, detail="model endpoint error") from None
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
+    request_id = str(uuid.uuid4())  # shared by the Postgres usage row and the Mongo document
     record_usage(
         conn, user, feature=FEATURE, model=settings.llm_model,
-        input_tokens=input_tokens, output_tokens=output_tokens, status="ok", elapsed_ms=elapsed_ms,
+        input_tokens=input_tokens, output_tokens=output_tokens, status="ok", elapsed_ms=elapsed_ms, request_id=request_id,
+    )
+    # Fire-and-forget: a store that is down costs the history entry, never the summary.
+    stored = ai_store.record_generation(
+        user.tenant_id, request_id, feature=FEATURE, model_version=settings.llm_model,
+        patient_id=patient_id, encounter_id=grounding.encounter["id"], text=text,
+        sources=[s.model_dump() for s in grounding.sources], input_tokens=input_tokens, output_tokens=output_tokens,
+        status="ok", user_id=user.id,
     )
     return StaySummary(
         summary=text,
@@ -236,4 +247,5 @@ def stay_summary(
         output_tokens=output_tokens,
         elapsed_ms=elapsed_ms,
         encounter_id=grounding.encounter["id"],
+        stored=stored,
     )
