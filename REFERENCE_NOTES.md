@@ -650,3 +650,21 @@ Measurements in this pass:
 | `scripts/smoke.py --base http://localhost` | `smoke ok` (stay summary skipped: no key in the cluster Secret) |
 | `check_submission.py --task 4 --base http://localhost` | 15 passed, 0 warnings, 0 failed; the probe lines now read `(kustomize output)` |
 | `GET /api/patients/199/risk/deterioration` through the Ingress | 200 `scored` 0.0 low, hour 145, 22 hours of vitals, `trained_at 2026-10-14T12:10:45Z` (the rerun's card), `stored: true` |
+
+## 17. GPU training made required (2026-10-15)
+
+After the curriculum review, the early-warning run has no cutline. `scripts/check_submission.py --task 2`
+now fails the line "trained on an AWS GPU instance" unless that run's `training_run.json` has
+`trained_on: ec2` and an EC2 instance id in `instance_hint`, and fails the GPU-timing line unless
+`device` is `cuda`, `gpu_name` is set and the CUDA epoch beats the CPU epoch. The readmission run keeps
+its WARN cutline. Run against this reference (laptop RTX 4090, `trained_on: local`):
+
+```
+WARN  trained on AWS (training/runs/2026-10-11/training_run.json)  (trained_on is local: the cutline, reported not failed)
+FAIL  trained on an AWS GPU instance (training/runs/2026-10-14-deterioration/training_run.json)  (trained_on 'local', instance None; a laptop or Colab run does not count)
+PASS  GPU run shows a GPU and a faster CUDA epoch (...)  (NVIDIA GeForce RTX 4090: one epoch cpu 5.63 s, cuda 0.6 s)
+16 passed, 1 warnings, 1 failed
+```
+
+The failure is expected: the reference was trained on a laptop. It passes once the run is repeated
+on the lab's `g4dn.xlarge` and its record and artifact are committed.

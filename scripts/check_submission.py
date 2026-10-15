@@ -7,8 +7,8 @@ the same script, and its output goes into docs/REPORT.md.
     python scripts/check_submission.py --task 2 --base http://localhost:8000 --repo .
 
 One line per check: PASS, FAIL or WARN with the reason. Exit code 0 when no check failed, 1
-otherwise. WARN never fails the run: it marks a cutline the spec allows (a run labelled
-`trained_on: local`), or a check that could not run on this machine (no cluster, no LLM key,
+otherwise. WARN never fails the run: it marks a cutline the spec allows (the readmission run labelled
+`trained_on: local`; the GPU run has no cutline), or a check that could not run on this machine (no cluster, no LLM key,
 Docker not available). scripts/README.md says what each task's check reads.
 
 What it needs: Python 3.12 (standard library only), the Compose stack running at --base, and
@@ -275,7 +275,13 @@ def check_run_evidence(report: Report, repo: Path, runs: list[tuple[Path, dict]]
             claimed[actual] = rel(repo, path)
             report.check(label, True, rel(repo, artifact))
         trained_on = record.get("trained_on")
-        if trained_on == "ec2":
+        if record.get("model") == "deterioration_12h":
+            # GPU training is a required part of the project: no cutline for this run.
+            instance = str(record.get("instance_hint") or "")
+            report.check(f"trained on an AWS GPU instance ({rel(repo, path)})",
+                         trained_on == "ec2" and instance.startswith("i-"),
+                         f"trained_on {trained_on!r}, instance {instance or None}; a laptop or Colab run does not count")
+        elif trained_on == "ec2":
             report.check(f"trained on AWS ({rel(repo, path)})", True,
                          f"instance {record.get('instance_hint')}; the claim itself is checked from the screenshots, not here")
         elif trained_on == "local":
@@ -323,10 +329,10 @@ def check_gpu_timing(report: Report, repo: Path, path: Path, record: dict) -> No
     gpu_name = record.get("gpu_name")
     seconds = record.get("epoch_seconds") or {}
     cpu, cuda = seconds.get("cpu"), seconds.get("cuda")
-    if not gpu_name:
-        report.warn(label, "gpu_name is null: the run did not see a GPU")
+    if not gpu_name or record.get("device") != "cuda":
+        report.check(label, False, f"gpu_name {gpu_name!r}, device {record.get('device')!r}: the run did not train on a GPU")
     elif cpu is None or cuda is None:
-        report.warn(label, "epoch_seconds has no cpu and cuda pair: run train_deterioration.py with --time-one-epoch")
+        report.check(label, False, "epoch_seconds has no cpu and cuda pair: run train_deterioration.py with --time-one-epoch")
     else:
         report.check(label, cuda < cpu, f"{gpu_name}: one epoch cpu {cpu} s, cuda {cuda} s")
 

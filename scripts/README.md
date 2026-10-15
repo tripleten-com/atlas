@@ -20,7 +20,7 @@ python scripts/check_submission.py --task 3 --base http://localhost:8000 --repo 
 
 One line per check, `PASS`, `FAIL` or `WARN` with the reason in brackets, then a count. The exit
 code is 0 when nothing failed and 1 otherwise. A `WARN` never fails the run: it marks a cutline
-the project allows (a model labelled `trained_on: local`), or a check that could not run on your
+the project allows (the readmission model labelled `trained_on: local`; the GPU run has none), or a check that could not run on your
 machine (no cluster, no LLM key on the server, Docker not available). Read every `WARN` anyway: the
 reviewer sees the same line.
 
@@ -44,10 +44,12 @@ and `clinician@harborview.example` in the other organisation) and the demo admin
   `.joblib`/`.pkl`/`.pt` with the right hash for your own model). The file name is yours; the hash
   is the proof the committed artifact is the one you trained. Two records may not point at the
   same file. `trained_on: ec2` is taken at its word here; the reviewer checks the screenshots.
-- `trained_on`: `ec2` passes; `local` is a `WARN` (the cutline for a failed Codio session, reported
-  not failed); anything else fails.
+- `trained_on` for the readmission run: `ec2` passes; `local` is a `WARN` (the cutline for a failed
+  Codio session, reported not failed); anything else fails.
+- `trained_on` for the early-warning run: it must be `ec2` with an EC2 instance id in
+  `instance_hint`. GPU training is required, so a laptop or Colab run fails this line.
 - The GPU run: `gpu_name` must be set and `epoch_seconds.cuda` below `epoch_seconds.cpu` (run
-  `train_deterioration.py --time-one-epoch`). Missing values are a `WARN`.
+  `train_deterioration.py --time-one-epoch`), and `device` must be `cuda`. Missing values fail.
 - `docker compose exec backend pytest tests -k "risk or early_warning"` must pass against the
   running stack.
 - The two risk routes, `GET /api/patients/{id}/risk/readmission` and
