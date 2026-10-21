@@ -30,7 +30,7 @@ training/train_deterioration.py
 1. Sign in at https://codio.com/auth/tripleten and open the AI/ML Codio course. If this is your
    first lab, enrol with the course token from the lab lesson page (it is behind the TripleTen
    login, never in this repository).
-2. Start the EC2 training lab. The hour starts now.
+2. Start the "Atlas Machine Learning on AWS" lab. The hour starts now.
 
 ## In the session
 

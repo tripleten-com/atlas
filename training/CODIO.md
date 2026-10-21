@@ -20,8 +20,9 @@ PowerShell or cmd. The commands inside the EC2 terminal are Linux and work as wr
 1. Sign in at https://codio.com/auth/tripleten and open the AI/ML Codio course. The first time,
    enrol with the course token from the lab lesson (it is on the lesson page, not in this
    repository).
-2. Open the EC2 training lab (the "End-to-End Machine Learning on AWS" flow) and start the lab.
-   It gives you a temporary AWS console login. The hour starts now.
+2. Open the "Atlas Machine Learning on AWS" lab and start the lab. It has no dataset or script
+   of its own; you bring the four files. It gives you a temporary AWS console login. The hour
+   starts now.
 
 ## In the session
 
