@@ -20,6 +20,7 @@ deterioration.py         shared definitions for the early-warning model: onset r
                          builder, standardisation, GRUNet (torch imported lazily, so the API can import the rest)
 train_deterioration.py   CSVs -> <out>/deterioration.onnx + deterioration.json + training_run.json + train.log
 check_onnx.py            runs the saved test windows through the .onnx with onnxruntime and compares with torch
+                         (the run folder's .onnx when it is there, else models/deterioration.onnx; --onnx to choose)
 requirements-gpu.txt     the training pins for the GPU session (torch, numpy, pandas, scikit-learn, onnx)
 CODIO_GPU.md             the step list for the GPU session (g4dn.xlarge, Deep Learning AMI)
 runs/<YYYY-MM-DD>-deterioration/   the early-warning run record; the .onnx there is gitignored, models/ holds the copy

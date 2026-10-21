@@ -12,6 +12,12 @@
 #
 # --wiredTigerCacheSizeGB 0.25 caps the storage engine's cache; without it MongoDB takes half
 # of what it believes is the machine's memory, which on a laptop cluster is the whole node.
+#
+# The memory limit is 1Gi, not 512Mi. Every `mongosh` started inside the Pod (the two probes,
+# and any `kubectl exec mongo-0 -- mongosh ...`) is a Node.js process that counts against the
+# same limit, and at 512Mi an interactive mongosh session was enough to get mongo-0 OOMKilled.
+# Ask the store with a one-shot `mongosh --quiet --eval "..."` (k8s/README.md, docs/AI_STORE.md)
+# rather than an interactive shell inside the Pod.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -72,7 +78,7 @@ spec:
               memory: 256Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              memory: 1Gi
   volumeClaimTemplates:
     - metadata:
         name: mongo-data

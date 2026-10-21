@@ -32,6 +32,7 @@ data:
   LLM_DAILY_TOKEN_LIMIT: "200000"
 
   # the document store for AI outputs (the user and password are in the Secret; MONGO_URL is
-  # assembled in api.yaml and worker.yaml the way DATABASE_URL is)
+  # assembled in api.yaml the way DATABASE_URL is. The api is the only reader and writer of
+  # the store, so the worker and the seed Job get neither the URL nor the MONGO_* keys)
   AI_STORE_DB: atlas_ai
   AI_STORE_PREDICTION_TTL_DAYS: "90"

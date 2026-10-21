@@ -2,9 +2,9 @@
 
 In a student fork this file is the project report: the data audit (Task 1), the training evidence
 and the calibration, alert-rate and lead-time tables (Task 2), the eval pass rate (Task 3), the
-Kubernetes transcripts (Task 4) and the output of `scripts/check_submission.py` for each task.
-The reference keeps only the Task 4 transcripts here, because `scripts/check_submission.py --task 4`
-reads this file for the rollback drill; every measured number behind the reference lives in
+Kubernetes transcripts (Task 4) and the evidence each task's Check-list asks for.
+The reference keeps only the Task 4 transcripts here, because the Task 4 Check-list asks for the
+rollback drill transcript in this file; every measured number behind the reference lives in
 `REFERENCE_NOTES.md`, and the task pages say what the rest of your report must contain.
 
 Observed 2026-10-14 on the reference laptop (Windows 11, Docker Desktop, kind v0.33.0, node image

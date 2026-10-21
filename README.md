@@ -15,9 +15,11 @@ deliveries. Meridian runs here as a mock service that simulates three live facil
 Three AI features are already built and wired into the patient record, so you can read working
 code before writing your own: a readmission-risk model, the early-warning model every student
 ships, and a stay summary written by a language model. Their outputs go to a MongoDB document
-store next to the Postgres clinical record. Your capstone replaces the readmission model with
-your own clinical question, keeps the early-warning model, adds your own generative or agentic
-feature, and ships the whole thing on Kubernetes.
+store next to the Postgres clinical record. The readmission model and the stay summary are
+worked examples: you read them as the pattern and do not choose them for your capstone. You build
+your own clinical question and your own generative or agentic feature beside them (both examples
+stay in your fork and keep working), train the early-warning model, which is the same for every
+student, and ship the whole thing on Kubernetes.
 
 Everything is synthetic. No real patients.
 
@@ -58,9 +60,6 @@ python scripts/smoke.py
 
 It logs in, reads a patient, scores one with the readmission model and asks for a stay
 summary. The summary step is skipped, not failed, while `LLM_API_KEY` in `.env` is empty.
-`python scripts/check_submission.py --task 2` (then `3`, then `4` once the cluster is up) is the
-automated check that closes Tasks 2 to 4; it passes on the reference, with two `WARN` lines for
-the models trained on this laptop rather than in the AWS lab (`scripts/README.md`).
 
 ## Demo logins
 
@@ -114,7 +113,9 @@ resync), live updates over Server-Sent Events, the Usage page fed by `record_usa
 audit log, and a smoke test. Read `docs/ARCHITECTURE.md` for how the pieces fit.
 
 Three reference AI features, all in the AI insights section of the patient record and all
-behind auth and the tenant boundary:
+behind auth and the tenant boundary. Readmission risk and the stay summary are the worked
+examples for your own predictive and generative features; the early warning is the model every
+student trains and ships:
 
 | Feature | Kind | Route | What it does |
 |---|---|---|---|
@@ -180,8 +181,7 @@ cluster and the ingress controller, load the images, create the Secret (with a f
 Skipping the Secret is the most common mistake: the api, worker and seed pods then sit in
 `CreateContainerConfigError`. The same file has the ladder of proof, the rollback drill and the
 broken Deployment exercise. The smoke test runs against the cluster with
-`python scripts/smoke.py --base http://localhost`, and
-`python scripts/check_submission.py --task 4` checks the manifests and the running cluster.
+`python scripts/smoke.py --base http://localhost`.
 
 ## Everyday commands
 
@@ -199,7 +199,6 @@ python scripts/smoke.py                # end-to-end check (Compose)
 .venv/Scripts/python training/export_vitals_hourly.py    # the early-warning training set (needs no torch)
 <python with torch> training/train_deterioration.py --time-one-epoch   # then copy the .onnx and .json to models/
 .venv/Scripts/python training/check_onnx.py training/runs/<today>-deterioration
-python scripts/check_submission.py --task 2            # the automated check (also --task 3 and --task 4)
 .venv/Scripts/python evals/make_golden.py && .venv/Scripts/python evals/run_evals.py --threshold 0.7
 docker compose down                    # stop (keeps data)
 docker compose down -v                 # stop and delete all data, then `up` starts fresh
@@ -236,7 +235,6 @@ models/                  the trained artifacts the API serves (/app/models in th
 evals/                   golden set and evaluators for the generative feature
 k8s/                     kind config, kustomize base, optional HPA, the broken-api exercise
 scripts/smoke.py         end-to-end check for Compose and the cluster
-scripts/check_submission.py   the automated check for Tasks 2 to 4 (scripts/README.md)
 docs/                    architecture, data feed, adding a feature, the AI document store
 REFERENCE_NOTES.md       every number measured on the reference build, with its command
 ```

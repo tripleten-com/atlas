@@ -34,6 +34,12 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+# The feature this file evaluates. A copy saved as run_evals_<feature>.py changes these two lines
+# first: FEATURE is the name its eval_runs documents are filed under (use the same name your route
+# passes to record_usage), GOLDEN_FILE the golden set it reads by default.
+FEATURE = "stay-summary"
+GOLDEN_FILE = "golden.jsonl"
+
 # No minus sign: clinical values here are never negative, and "2026-09-11" must read as 2026, 9, 11.
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
 SENTENCE_END = re.compile(r"[.!?]+(?:\s+|$)")
@@ -118,7 +124,7 @@ def record_run(tenant_id: int, model: str, golden_path: Path, cases: int, passed
         print(f"not stored: {exc} (pip install -r backend/requirements.txt, or pass --no-store)")
         return
     stored = ai_store.record_eval_run(
-        tenant_id, request_id=str(uuid.uuid4()), feature="stay-summary", model_version=model,
+        tenant_id, request_id=str(uuid.uuid4()), feature=FEATURE, model_version=model,
         golden_file_sha256=hashlib.sha256(golden_path.read_bytes()).hexdigest(),
         cases=cases, passed=passed, threshold=threshold, results=results,
     )
@@ -132,7 +138,7 @@ def main() -> None:
     parser.add_argument("--api", default="http://127.0.0.1:8000")
     parser.add_argument("--email", default="clinician@riverside.example")
     parser.add_argument("--password", default="atlas-demo")
-    parser.add_argument("--golden", default=str(Path(__file__).resolve().parent / "golden.jsonl"))
+    parser.add_argument("--golden", default=str(Path(__file__).resolve().parent / GOLDEN_FILE))
     parser.add_argument("--threshold", type=float, default=None, help="exit 1 when the pass rate is below this (0 to 1)")
     parser.add_argument("--show", action="store_true", help="print each summary in full")
     parser.add_argument("--no-store", action="store_true", help="do not write the run to the document store even if MONGO_URL is set")

@@ -36,20 +36,22 @@ const BUILT = [
   },
 ];
 
-// The clinical questions a team may choose for a predictive feature. The Test Facility is the
+// The clinical questions for a predictive feature. A is built here as the worked example: a team
+// reads it as the pattern and chooses B, C, D or its own question E. The Test Facility is the
 // training set for all of them; the live facilities are where the feature is watched.
 const PREDICTIVE_MENU = [
-  { code: "A", question: "Readmission within 30 days", unit: "One finished inpatient or observation stay", when: "At discharge", note: "Built here" },
+  { code: "A", question: "Readmission within 30 days", unit: "One finished inpatient or observation stay", when: "At discharge", note: "Worked example" },
   { code: "B", question: "Prolonged stay", unit: "One inpatient stay", when: "24 hours after admission", note: "Longer than the Test Facility median for that admission type" },
   { code: "C", question: "Deterioration during the stay", unit: "One inpatient stay", when: "12 hours after admission", note: "Built here as the early-warning model (fixed for everyone); a vital sign crossing a threshold you define and write down" },
   { code: "D", question: "Discharge to somewhere other than home", unit: "One inpatient stay", when: "24 hours after admission", note: "Disposition not home or home health" },
   { code: "E", question: "Your own question", unit: "You define it", when: "You define it", note: "Approved by your reviewer first" },
 ];
 
-// The generative and agentic features a team may choose. Each one is grounded in rows the
+// The generative and agentic features. G1 is built here as the worked example: a team reads it as
+// the pattern and chooses G2, G3, A1, A2 or its own feature. Each one is grounded in rows the
 // backend fetched for the caller's organisation; the model never sees anything else.
 const GENERATIVE_MENU = [
-  { code: "G1", feature: "Stay summary", kind: "Generative", grounding: "Encounter, vitals, labs, medications for that visit", action: "None", note: "Built here" },
+  { code: "G1", feature: "Stay summary", kind: "Generative", grounding: "Encounter, vitals, labs, medications for that visit", action: "None", note: "Worked example" },
   { code: "G2", feature: "Discharge summary draft the clinician edits", kind: "Generative", grounding: "Same as G1 plus doses given", action: "Saves a draft", note: "" },
   { code: "G3", feature: "Results triage note for a flagged lab", kind: "Generative", grounding: "The result, the patient's other results on that panel, active medications", action: "None", note: "" },
   { code: "A1", feature: "Record assistant that answers questions about one patient", kind: "Agentic", grounding: "Read-only tools: vitals, labs, medications, encounters", action: "None", note: "" },
@@ -177,8 +179,8 @@ function MenuTable({ columns, rows, caption }) {
             <tr key={r.code}>
               {columns.map((c) => (
                 <td key={c.key} className={c.cellClassName}>
-                  {c.key === "note" && r.note === "Built here" ? (
-                    <span className="badge badge-brand">Built here</span>
+                  {c.key === "note" && r.note === "Worked example" ? (
+                    <span className="badge badge-brand">Worked example</span>
                   ) : (
                     r[c.key] || <span className="text-xs text-ink-400">&mdash;</span>
                   )}
@@ -264,7 +266,7 @@ export default function AiFeatures() {
     <div className="space-y-6">
       <PageHeader
         title="AI features"
-        description="Three features ship with Atlas: two predictive, one generative. This page explains them, lists what a team can build next, and shows where a new feature plugs in."
+        description="Three features ship with Atlas: two predictive, one generative. The readmission card and the stay summary are worked examples to copy the shape of. This page explains them, lists what a team can build next, and shows where a new feature plugs in."
       />
 
       <section aria-labelledby="built-heading">
@@ -307,7 +309,7 @@ export default function AiFeatures() {
 
       <Card
         title="Predictive features you can build"
-        subtitle="Pick one clinical question. Build the label from encounter dates and vitals yourself; use only data available at the prediction time."
+        subtitle="Pick one of B, C, D or your own question (E). A is the worked example built here, so it is off the list. Build the label from encounter dates and vitals yourself; use only data available at the prediction time."
         padded={false}
       >
         <MenuTable columns={PREDICTIVE_COLUMNS} rows={PREDICTIVE_MENU} caption="Clinical questions for a predictive feature" />
@@ -315,7 +317,7 @@ export default function AiFeatures() {
 
       <Card
         title="Generative and agentic features you can build"
-        subtitle="Pick one. The model sees only rows the backend fetched for the signed-in organisation, and every call is metered."
+        subtitle="Pick one of G2, G3, A1, A2 or your own. G1 is the worked example built here, so it is off the list. The model sees only rows the backend fetched for the signed-in organisation, and every call is metered."
         padded={false}
       >
         <MenuTable columns={GENERATIVE_COLUMNS} rows={GENERATIVE_MENU} caption="Generative and agentic feature options" />

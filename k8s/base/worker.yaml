@@ -5,8 +5,7 @@
 # /tmp/worker-heartbeat once per loop, and a probe fails when that file is older than 120
 # seconds. Readiness on a Pod with no Service changes no traffic; it is still here so
 # `kubectl get pods` shows 0/1 instead of 1/1 while the worker is waiting for the seed Job, and
-# so every Deployment in the base answers the same two questions (the automated check for Task 4
-# looks for both probes on every Deployment).
+# so every Deployment in the base answers the same two questions: is it alive, and is it ready.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

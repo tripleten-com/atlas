@@ -16,7 +16,7 @@ Collections and what each document carries (every document also has `tenant_id`,
 
     predictions   patient_id, encounter_id, probability, band, alert, inputs, state      expire (TTL)
     generations   patient_id, encounter_id, text, sources, input_tokens, output_tokens, status, user_id
-    agent_runs    patient_id, question, steps, answer, approved
+    agent_runs    patient_id, question, steps, answer, approved, status
     eval_runs     golden_file_sha256, cases, passed, threshold, results
 
 The rule that keeps the store safe: a store that is down never breaks a route. Every write is
@@ -53,6 +53,9 @@ HEALTH_PING_SECONDS = 0.5
 WARN_EVERY_SECONDS = 60
 # How much of a generated text the history list shows.
 PREVIEW_CHARS = 160
+# What an agent run records as `status`: it finished with an answer, or the step or token cap
+# stopped it first (the answer is then whatever the agent had, possibly empty).
+AGENT_STATUSES = ("completed", "stopped")
 
 _client: MongoClient | None = None
 _last_warning_at: float = 0.0
@@ -221,11 +224,15 @@ def record_agent_run(
     steps: list[dict[str, Any]],
     answer: str,
     approved: bool | None = None,
+    status: str = "completed",
 ) -> bool:
     """One agentic request: the question, every tool step (tool, arguments, row count, elapsed),
-    the answer, and whether a person approved it."""
+    the answer, whether a person approved it, and `status`: "completed" when the agent answered,
+    "stopped" when the step or token cap ended the run first."""
+    if status not in AGENT_STATUSES:
+        raise ValueError(f"agent run status must be one of {AGENT_STATUSES}")
     doc = _base(tenant_id, request_id, feature, model_version)
-    doc.update(patient_id=patient_id, question=question, steps=steps, answer=answer, approved=approved)
+    doc.update(patient_id=patient_id, question=question, steps=steps, answer=answer, approved=approved, status=status)
     return _insert(AGENT_RUNS, doc)
 
 
@@ -266,7 +273,9 @@ def _plain(values: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------- reads
 
 def history(tenant_id: int, patient_id: int, feature: str | None = None, limit: int = 5) -> tuple[list[dict], bool]:
-    """The newest outputs for one patient, newest first, from predictions and generations.
+    """The newest outputs for one patient, newest first, from predictions, generations and
+    agent runs (an agent run shows its status as `state` and the start of its answer as
+    `text_preview`).
 
     Returns (items, ok). `ok` is False when the store could not be read, and the items are then
     empty; the route passes it on as `stored` so the card can say "history unavailable".
@@ -278,7 +287,7 @@ def history(tenant_id: int, patient_id: int, feature: str | None = None, limit: 
         query["feature"] = feature
     try:
         docs = []
-        for name in (PREDICTIONS, GENERATIONS):
+        for name in (PREDICTIONS, GENERATIONS, AGENT_RUNS):
             docs += list(db()[name].find(query).sort("created_at", -1).limit(limit))
     except Exception as exc:
         _warn("ai_store read failed, history unavailable", exc)
@@ -288,8 +297,12 @@ def history(tenant_id: int, patient_id: int, feature: str | None = None, limit: 
 
 
 def _history_item(doc: dict) -> dict:
-    """The small shape the history route returns; a summary shows only the start of its text."""
-    text = doc.get("text")
+    """The small shape the history route returns; a summary or an agent's answer shows only the
+    start of its text, and an agent run's status ("completed" or "stopped") is its state."""
+    text = doc.get("text") or doc.get("answer")
+    state = doc.get("state")
+    if state is None and "steps" in doc:  # an agent run
+        state = doc.get("status")
     preview = None
     if text:
         preview = text[:PREVIEW_CHARS] + ("..." if len(text) > PREVIEW_CHARS else "")
@@ -299,7 +312,7 @@ def _history_item(doc: dict) -> dict:
         "model_version": doc.get("model_version"),
         "probability": doc.get("probability"),
         "band": doc.get("band"),
-        "state": doc.get("state"),
+        "state": state,
         "text_preview": preview,
     }
 

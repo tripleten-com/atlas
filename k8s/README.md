@@ -214,6 +214,20 @@ Check these in order. Each step depends on the one before it.
    Lines like `applied batch of 500: {'processed': 491, 'deferred': 9}` during the backfill,
    then smaller batches as events arrive in real time.
 
+8. The document store holds what the cards wrote. Ask inside the pod, with the credentials it
+   already has as environment variables:
+
+   ```bash
+   kubectl -n atlas exec mongo-0 -- sh -c 'mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin atlas_ai --eval "db.predictions.countDocuments()"'
+   ```
+
+   A count above zero once a patient has been opened; `db.predictions.getIndexes()` asked the
+   same way lists the TTL index `created_at_ttl` beside `tenant_patient_created`.
+   Keep to this one-shot `--eval` form: an interactive `mongosh` inside the Pod shares its 1Gi
+   memory limit with the database. For an interactive shell, use
+   `kubectl -n atlas port-forward pod/mongo-0 27019:27017` and the `mongosh` on your machine
+   (`docs/AI_STORE.md` has the connection string).
+
 The smoke script works against the cluster too. With `--base` the API and the web app share
 the Ingress address; Meridian has no Ingress route, so its own health check is skipped unless
 you forward its port and pass `--feed`:

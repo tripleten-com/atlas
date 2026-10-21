@@ -199,3 +199,34 @@ def test_indexes_are_created_on_the_first_write_when_startup_missed_them(scratch
     names = collection.index_information()
     assert "created_at_ttl" in names and "tenant_patient_created" in names
     assert ai_store._indexes_ready is True
+
+
+def test_history_lists_agent_runs_with_their_status(client, riverside, demo_patient_id, scratch_store):
+    """An agent feature's runs come back from the same route in the same shape: the status is the
+    state ("completed", or "stopped" when a cap ended the run) and the answer is the preview."""
+    tenant_id = _tenant_id(client, riverside)
+    steps = [{"tool": "get_labs", "arguments": {"patient_id": demo_patient_id}, "rows": 3, "elapsed_ms": 12}]
+    assert ai_store.record_agent_run(
+        tenant_id, "test-agent-done", feature="test-agent", model_version="test",
+        patient_id=demo_patient_id, question="Which labs were abnormal?", steps=steps, answer=FAKE_TEXT,
+    )
+    assert ai_store.record_agent_run(
+        tenant_id, "test-agent-capped", feature="test-agent", model_version="test",
+        patient_id=demo_patient_id, question="Which labs were abnormal?", steps=steps * 6, answer="",
+        status="stopped",
+    )
+    history = client.get(HISTORY.format(demo_patient_id), params={"feature": "test-agent"}, headers=riverside).json()
+    assert history["stored"] is True
+    assert [item["state"] for item in history["items"]] == ["stopped", "completed"]  # newest first
+    assert history["items"][1]["text_preview"] == FAKE_TEXT
+    assert history["items"][0]["probability"] is None
+    assert set(history["items"][0]) == {"created_at", "feature", "model_version", "probability", "band", "state", "text_preview"}
+    assert scratch_store[ai_store.AGENT_RUNS].find_one({"request_id": "test-agent-capped"})["status"] == "stopped"
+
+
+def test_agent_run_status_must_be_known():
+    with pytest.raises(ValueError):
+        ai_store.record_agent_run(
+            1, "test-agent-bad", feature="test-agent", model_version="test",
+            patient_id=None, question="q", steps=[], answer="", status="capped",
+        )

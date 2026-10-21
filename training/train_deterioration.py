@@ -310,7 +310,7 @@ def alert_metrics(split: dict, y_prob: np.ndarray, stride: int, threshold: float
     Patient-days are the hours the windows stand for (one window = `stride` hours) over 24. A
     deterioration is "caught" when a window of that stay alerts inside the 12-hour horizon the
     model was trained for (onset minus as-of hour under HORIZON_HOURS, that is a positive
-    window); lead time is onset minus the first such alerting as-of hour, so it is at most 12.
+    window); lead time is onset minus the first such alerting as-of hour, so it is at most 11.
     An alert earlier in the stay is a false alarm by the model's own definition, so it does
     not count as catching the onset; `caught_encounters_any_hour` and
     `median_lead_time_hours_any_hour` keep the looser count (any alert before the onset) for

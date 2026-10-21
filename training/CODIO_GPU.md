@@ -132,7 +132,8 @@ docker compose restart backend
 ```
 
 `training_run.json` must say `"trained_on": "ec2"`, carry a `gpu_name`, and have
-`epoch_seconds.cuda` below `epoch_seconds.cpu`; that is what the automated check reads.
+`epoch_seconds.cuda` below `epoch_seconds.cpu`, with an EC2 instance id in `instance_hint` and
+`device` set to `cuda`; the Task 2 Check-list has a line for exactly this.
 
 ## If something goes wrong
 
@@ -141,8 +142,8 @@ docker compose restart backend
 - `pip install torch` from the default index gives a CPU-only build. Use the `--index-url`
   line above.
 - `--device cuda` exits with "torch.cuda.is_available() is False": same cause as the first bullet.
-- The session ran out: nothing persists. The cutline in the task page applies: a laptop or
-  Colab run of the same script, labelled `trained_on: local`, is accepted and loses the
-  "trained on AWS" line for this model only.
+- The session ran out: nothing persists. Book another session. A laptop or Colab run of the
+  same script is only the rehearsal: it is labelled `trained_on: local` and fails the Task 2
+  Check-list line on the GPU run.
 - Instance types other than `t2.micro` and `g4dn.xlarge`, longer sessions, SageMaker and a
   persistent bucket are not part of this lab.

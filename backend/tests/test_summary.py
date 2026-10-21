@@ -2,6 +2,8 @@
 grounded output, honest refusals, metering, and never across the tenant boundary."""
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from app import llm
@@ -80,8 +82,10 @@ def test_summary_without_a_key_is_503_and_metered(client, riverside, demo_patien
     assert _usage_rows(tenant_id, "unconfigured") == before + 1  # refusals are metered too
 
 
-def test_summary_over_the_daily_limit_is_429(client, riverside, demo_patient_id, fake_model):
-    """Spend today's allowance in one fake row, then watch the route refuse and record the refusal."""
+def test_summary_over_the_daily_limit_is_429(client, riverside, demo_patient_id, fake_model, monkeypatch):
+    """Set a ceiling, spend past it in one fake row, then watch the route refuse and record the refusal."""
+    # the default ceiling; conftest raises it out of reach for every other test
+    monkeypatch.setattr(summary, "settings", dataclasses.replace(summary.settings, llm_daily_token_limit=200_000))
     tenant_id = _tenant_id(client, riverside)
     with connection() as conn:
         conn.execute(

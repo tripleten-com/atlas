@@ -25,7 +25,7 @@ Every document carries `tenant_id` (the same integer as in Postgres), `created_a
 |---|---|---|---|---|
 | `predictions` | scored request | `patient_id`, `encounter_id`, `probability`, `band`, `alert`, `inputs` (the feature row or window summary), `state` | `tenant_patient_created` on `{tenant_id: 1, patient_id: 1, created_at: -1}`; `created_at_ttl` on `created_at`, expires after `AI_STORE_PREDICTION_TTL_DAYS` (90) | expire |
 | `generations` | generated text | `patient_id`, `encounter_id`, `text`, `sources` (`[{table, id}]`), `input_tokens`, `output_tokens`, `status`, `user_id` | `tenant_patient_created` | kept (manual purge below) |
-| `agent_runs` | agentic request | `patient_id`, `question`, `steps` (tool, arguments, row count, elapsed), `answer`, `approved` | `tenant_patient_created` | kept |
+| `agent_runs` | agentic request | `patient_id`, `question`, `steps` (tool, arguments, row count, elapsed), `answer`, `approved`, `status` (`completed`, or `stopped` when the step or token cap ended the run) | `tenant_patient_created` | kept |
 | `eval_runs` | run of `evals/run_evals.py` | `golden_file_sha256`, `cases`, `passed`, `threshold`, `results` (one per case) | `tenant_created` on `{tenant_id: 1, created_at: -1}` | kept |
 
 `ensure_indexes()` creates all of these from the API's lifespan, after the model is loaded. When
@@ -44,6 +44,9 @@ a minute, so a document may outlive its deadline by that long.
 - `GET /api/patients/{id}/ai/history?feature=readmission-risk&limit=5` (`routers/ai_history.py`)
   reads the newest documents for one patient and returns
   `{items: [{created_at, feature, model_version, probability, band, state, text_preview}], stored}`.
+  It reads `predictions`, `generations` and `agent_runs`, so any feature name works as the
+  filter; an agent run's `status` comes back as `state` and the start of its `answer` as
+  `text_preview`.
   The Postgres patient lookup runs first, so another organisation's patient id is a 404 before
   the store is touched; the store query then filters on the caller's `tenant_id` as well.
 - `evals/run_evals.py` writes an `eval_runs` document when `MONGO_URL` is set (skip with
@@ -91,6 +94,25 @@ From your machine, with the Compose stack running (`mongosh` comes with MongoDB 
 
 ```bash
 mongosh "mongodb://atlas:atlas-dev-only@localhost:27018/atlas_ai?authSource=admin"
+```
+
+On the cluster, run each query as a one-shot command inside the `mongo-0` Pod, which already has
+the user and password as environment variables, so you never type them:
+
+```bash
+kubectl -n atlas exec mongo-0 -- sh -c 'mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin atlas_ai --eval "db.predictions.countDocuments()"'
+```
+
+Put the query in place of `db.predictions.countDocuments()`, using single quotes inside it
+(`db.predictions.find({feature: 'early-warning'}).limit(5)`). Do not open an interactive
+`mongosh` inside the Pod: the shell is a Node.js process that shares the Pod's memory limit with
+the database, and a long session can get `mongo-0` OOMKilled. For an interactive session, forward
+the port and use the `mongosh` on your machine instead (the password is the `MONGO_PASSWORD` in
+your `k8s/secret.env`):
+
+```bash
+kubectl -n atlas port-forward pod/mongo-0 27019:27017
+mongosh "mongodb://atlas@localhost:27019/atlas_ai?authSource=admin"   # asks for the password
 ```
 
 1. How many documents per tenant per feature, newest first:

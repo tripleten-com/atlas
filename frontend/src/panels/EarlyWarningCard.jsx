@@ -105,7 +105,7 @@ function EarlyWarningResult({ data }) {
           </Badge>
         </div>
         <p className="text-sm text-ink-600">
-          The vitals crossed the deterioration line at {formatDateTime(data.as_of)} (hour {data.hours_admitted} of the stay). There is
+          The vitals crossed the deterioration line at {formatDateTime(data.as_of)}. There is
           nothing left to forecast: the event this model predicts has already happened, so no probability is shown.
         </p>
         <Footer data={data} />

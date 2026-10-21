@@ -4,14 +4,14 @@
 
 Behind auth and the tenant boundary like every other patient route. The answers it can give:
 
-    200  {summary, sources, model, input_tokens, output_tokens, elapsed_ms, encounter_id}
+    200  {summary, sources, model, input_tokens, output_tokens, elapsed_ms, encounter_id, stored}
     404  Patient not found              (missing, or another tenant's; the usual 404)
     404  not applicable: no encounter   (the patient has never had a visit)
     429  daily token limit reached      (this tenant spent LLM_DAILY_TOKEN_LIMIT tokens today)
     502  model endpoint error           (the endpoint timed out or answered with an error)
     503  no model configured            (LLM_API_KEY is empty)
 
-The reference ships the Task 3 cutline: one synchronous call that returns the whole text. The
+The reference ships the synchronous cutline: one synchronous call that returns the whole text. The
 course asks you to stream over SSE or run a queued job with polling; `routers/activity.py`
 (`/api/activity/stream`) is the SSE pattern to copy.
 

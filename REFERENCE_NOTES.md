@@ -331,7 +331,8 @@ answered HTTP 200.
 ## 9. The 2026-10-14 integration pass (early-warning model, document store, automated check)
 
 Four build agents added the early-warning model (training and serving), the MongoDB document
-store and `scripts/check_submission.py` on 2026-10-14; this pass integrated their work, re-ran
+store and a submission checker script on 2026-10-14 (removed from the repository on 2026-10-19, see
+section 18; the rows below that name "the checker" record what it printed then); this pass integrated their work, re-ran
 every check from a stopped Compose stack, recreated the kind cluster from scratch and recorded
 the numbers below. Same machine as the earlier sections (Windows 11, Docker Desktop, 16 GB of
 memory). Numbers marked "reported" come from the agents' reports and were not reproduced here;
@@ -352,9 +353,9 @@ docker compose up -d --build   # 22 s (image layers cached; backend healthy, wor
 | Scripts lint | All checks passed | `.venv/Scripts/python -m ruff check --config backend/ruff.toml training evals scripts` |
 | Frontend compile | built in 4.65 s (4.89 s on the re-run), the pre-existing chunk-size warning only | `docker compose exec -T frontend npx vite build` |
 | Smoke, Compose | 14 checks ok, `smoke ok`; readmission patient 801 `0.163 medium`; summary 1,262 + 273 tokens in 5,060 ms with 23 sources | `.venv/Scripts/python scripts/smoke.py` |
-| Automated check, Task 2 | 16 passed, 2 warnings (both runs `trained_on: local`, the cutline), 0 failed, exit 0, 18 s wall (includes `pytest -k "risk or early_warning"`: 28 passed in 7.78 s, and a fresh vite build scanned for the two secret values) | `.venv/Scripts/python scripts/check_submission.py --task 2` |
-| Automated check, Task 3 | 11 passed, 0 warnings, 0 failed, exit 0, 111 s wall; summary call 565 tokens in 3,688 ms; `usage_events` 185 -> 186; evals 10/10 at threshold 0.7 for 21,710 tokens; the second API container at port 8001 answered `stored: false` with `ai_store unavailable` and 429 at `LLM_DAILY_TOKEN_LIMIT=1`; `pytest -k tenant` 10 passed in 1.39 s | `.venv/Scripts/python scripts/check_submission.py --task 3` |
-| Automated check, Task 4 | see section 14 | `.venv/Scripts/python scripts/check_submission.py --task 4 --base http://localhost` |
+| Automated check, Task 2 | 16 passed, 2 warnings (both runs `trained_on: local`, the cutline), 0 failed, exit 0, 18 s wall (includes `pytest -k "risk or early_warning"`: 28 passed in 7.78 s, and a fresh vite build scanned for the two secret values) | the checker, `--task 2` |
+| Automated check, Task 3 | 11 passed, 0 warnings, 0 failed, exit 0, 111 s wall; summary call 565 tokens in 3,688 ms; `usage_events` 185 -> 186; evals 10/10 at threshold 0.7 for 21,710 tokens; the second API container at port 8001 answered `stored: false` with `ai_store unavailable` and 429 at `LLM_DAILY_TOKEN_LIMIT=1`; `pytest -k tenant` 10 passed in 1.39 s | the checker, `--task 3` |
+| Automated check, Task 4 | see section 14 | the checker, `--task 4 --base http://localhost` |
 
 Two small fixes were needed for the automated check to pass on the reference, both made in this
 pass: `k8s/base/worker.yaml` gained a `readinessProbe` (the same heartbeat exec as its liveness
@@ -501,7 +502,7 @@ Observed by the serving build agent on 2026-10-14 on the Compose backend (uvicor
 | Startup with both models | lifespan 0.93 s: `Waiting for application startup` 11:08:18.669Z, readmission model loaded 11:08:19.495Z (includes opening the pool), early-warning model loaded 11:08:19.572Z, `Application startup complete` 11:08:19.602Z (reported); early-warning load logged at 76 ms then, 61 ms in this pass; `ensure_indexes` about 30 ms | `docker compose logs --timestamps backend` |
 | One request end to end, Compose | 9 to 16 ms (seven curl calls, reported); 10.1, 10.5 and 10.4 ms for patients 916, 343 and 135 in this pass | `curl -w '%{time_total}' localhost:8000/api/patients/<id>/risk/deterioration` |
 | `assess()` in process | 11.7 ms first call, 0.3 to 7.3 ms warm over 16 stays (host venv, reported) | scratch script, deleted |
-| Open DEMO inpatients at the time (16 stays; DEMO vitals frozen at 2026-10-11 17:52Z, wall clock 2026-10-14) | 15 `scored`, 1 `deteriorating` (encounter 8149, patient 916, onset at hour 191 of the stay, `as_of` 2026-10-05T17:40Z), 0 `insufficient_data`; probabilities min 0.000, median 0.000, max 0.981; 13 of 15 round to 0.006 or less; two alerts at 0.20 (patient 991 at 0.262, patient 135 at 0.981); `hours_of_vitals` 4 to 87; youngest scored stay 13 hours (reported) | scratch script against `localhost:5433` and `models/deterioration.onnx` |
+| Open DEMO inpatients at the time (16 stays; DEMO vitals frozen at 2026-10-11 17:52Z, wall clock 2026-10-14) | 15 `scored`, 1 `deteriorating` (encounter 8149, patient 916, onset at hour 46 of the stay, which is now at hour 191, `as_of` 2026-10-05T17:40Z), 0 `insufficient_data`; probabilities min 0.000, median 0.000, max 0.981; 13 of 15 round to 0.006 or less; two alerts at 0.20 (patient 991 at 0.262, patient 135 at 0.981); `hours_of_vitals` 4 to 87; youngest scored stay 13 hours (reported) | scratch script against `localhost:5433` and `models/deterioration.onnx` |
 | Live RGH spot checks (reported) | hour 4 with 1 vitals hour and hour 9 with 3 vitals hours: `insufficient_data`; hours 209 and 337: `scored` 0.0 low | curl as `clinician@riverside.example` |
 | Other tenant | 404 `{"detail":"Patient not found"}` for a Harborview patient asked as Riverside, the same body as a missing id | `test_early_warning.py`, checker Task 2 |
 | Not applicable | 404 `{"detail":"not applicable: no open inpatient encounter"}` for a discharged patient | `test_early_warning.py` |
@@ -600,7 +601,7 @@ Ladder of proof through the Ingress, all on http://localhost:
 | Tenant | the three calls above as clinician@harborview.example | 404 `{"detail":"Patient not found"}` for the risk and the history route |
 | Store | `mongosh` inside `mongo-0` | 4 predictions and 0 generations after the ladder; indexes as above after the fix |
 | Smoke | `.venv/Scripts/python scripts/smoke.py --base http://localhost` | `smoke ok`: 12 ok, 2 skips (Meridian health, no Ingress route; stay summary, no key); readmission patient 167 `0.379 high`; 25 s wall (the 0.21 s per request port-mapping floor from section 6 still holds) |
-| Check | `.venv/Scripts/python scripts/check_submission.py --task 4 --base http://localhost` | 15 passed, 0 warnings, 0 failed, exit 0, 26 s wall (11 manifest files, 17 kustomize objects, 9 pods Ready with mongo-0, smoke through the Ingress, `docs/REPORT.md` markers) |
+| Check | the checker, `--task 4 --base http://localhost` | 15 passed, 0 warnings, 0 failed, exit 0, 26 s wall (11 manifest files, 17 kustomize objects, 9 pods Ready with mongo-0, smoke through the Ingress, `docs/REPORT.md` markers) |
 
 Rollback drill, run twice in this pass (transcript in `docs/REPORT.md`): `set image deploy/api
 api=atlas-api:sha-bad` adds a third api pod that goes `PodInitializing` (the init container still
@@ -631,7 +632,7 @@ lenses), each with what was done. No blockers; one major.
 | 4, 12 | `band` from the rounded probability, `alert` from the unrounded one (`backend/app/routers/early_warning.py`) | minor | Fixed. `assess()` rounds to three decimals once and decides `alert` on the rounded value; the router no longer rounds. New test `test_scored_probability_is_rounded_before_the_alert_decision`. |
 | 5 | `hours_of_vitals` can exceed `hours_admitted` in the first hour of a stay (`backend/app/ml_deterioration.py`) | minor | Fixed. `hourly_grid()` accepts zero hours and returns an empty grid, so a stay younger than one hour reports `hours_admitted 0, hours_of_vitals 0`. New test `test_first_hour_of_a_stay_counts_no_vitals_hour`. |
 | 6 | Scored card calls a class-weighted score a "chance" and flags low confidence only for the medium band (`frontend/src/panels/EarlyWarningCard.jsx`) | minor | Fixed. The sentence now reads "Model score for ... The score ranks patients; it is not the observed chance", and the low-confidence note shows for every scored probability under `CALIBRATED_FROM = 0.9` (the only bin whose observed rate, 0.712, came close to its mean prediction) and quotes the under-6-percent observed rates. The README gap bullet says the same. |
-| 7 | Task 4 probe check reads commented-out YAML as a real probe (`scripts/check_submission.py`) | major | Fixed. `strip_comments()` removes comment lines before every text search (probes, `:latest`), the probe regex wants an indented key, and when `kubectl kustomize` renders, the Deployments are read from the rendered output ("kustomize output" in the detail) instead of the source files. Verified on a scratch copy with the api `readinessProbe` block commented out: kustomize renders 17 objects, `FAIL Deployment api has readiness and liveness probes (kustomize output: missing readiness)`; the earlier text search passed it. |
+| 7 | Task 4 probe check reads commented-out YAML as a real probe (the checker) | major | Fixed. `strip_comments()` removes comment lines before every text search (probes, `:latest`), the probe regex wants an indented key, and when `kubectl kustomize` renders, the Deployments are read from the rendered output ("kustomize output" in the detail) instead of the source files. Verified on a scratch copy with the api `readinessProbe` block commented out: kustomize renders 17 objects, `FAIL Deployment api has readiness and liveness probes (kustomize output: missing readiness)`; the earlier text search passed it. |
 | 8 | Artifact-hash check lets one artifact vouch for two runs and ignores `artifact_file` | minor | Fixed. `artifact_for()` hashes `models/<artifact_file>` (bare name only), falls back to the `.onnx` for `deterioration_12h` or to a hash match among `.joblib`/`.pkl`/`.pt` for the student's model, and a second run resolving to the same file fails ("is already the artifact of ..."). The `trained_on: ec2` PASS now says the claim is checked from the screenshots, not here. Verified: a scratch repo whose GPU run points at `readmission.joblib` gets `FAIL ... models/readmission.joblib is already the artifact of training/runs/2026-10-11/training_run.json`. `scripts/README.md` updated. |
 | 9 | Task 3 never requires `stored: true` on a healthy store | minor | Fixed. `check_history()` also requires `stored: true` on the score it just fetched (detail shows both flags), and the two Task 2 route checks print `stored`. |
 | 10 | Any git failure other than "untracked" counted as "secret.env absent from git" | minor | Fixed. Exit 1 is "not tracked" (PASS), 0 is "tracked" (FAIL), anything else is a WARN with git's last line. Verified: a scratch folder without `.git` now prints `WARN k8s/secret.env is not committed (git exited 128: fatal: not a git repository ...)`. |
@@ -643,28 +644,30 @@ Measurements in this pass:
 | `docker compose up -d --build backend worker` after the backend change | backend healthy, worker started; `docker compose exec -T backend pytest -q` 72 passed (70 before plus the two new early-warning tests), exit 0; `ruff check app tests` clean; `ruff check --config backend/ruff.toml training evals scripts` clean |
 | `docker compose exec -T frontend npx vite build` | built in 4.67 s, `index-*.js` 792.78 kB (unchanged size class) |
 | Retraining (`carescribe` venv, RTX 4090, same command as 10b) | 38.1 s wall, fit 25.0 s, 21 epochs, best 15 (validation AP 0.8772), one epoch cpu 5.63 s / cuda 0.6 s; `check_onnx.py` max gap 2.88e-05 OK |
-| `check_submission.py --task 2` (Compose) | 16 passed, 2 warnings (`trained_on: local` twice), 0 failed |
-| `check_submission.py --task 3` (Compose, one real summary: 420+147 tokens, 2,874 ms; evals 10/10, 21,635 tokens) | 11 passed, 0 warnings, 0 failed |
+| checker `--task 2` (Compose) | 16 passed, 2 warnings (`trained_on: local` twice), 0 failed |
+| checker `--task 3` (Compose, one real summary: 420+147 tokens, 2,874 ms; evals 10/10, 21,635 tokens) | 11 passed, 0 warnings, 0 failed |
 | Images | `atlas-api`, `atlas-web`, `atlas-meridian` rebuilt as `sha-5b1b962` (the commit under review; `kustomization.yaml` `newTag` set to it) and loaded into kind |
 | `kubectl -n atlas delete job atlas-seed; kubectl apply -k k8s/base` | api, web, worker, meridian re-rolled, StatefulSet `configured` without a restart (`mongo-0` 37 min old afterwards), seed Job re-created and `Completed`; `rollout status` for the four Deployments all succeeded within about 30 s; the worker logged `Meridian unreachable` for a few seconds while meridian's new pod started, then resumed |
 | `scripts/smoke.py --base http://localhost` | `smoke ok` (stay summary skipped: no key in the cluster Secret) |
-| `check_submission.py --task 4 --base http://localhost` | 15 passed, 0 warnings, 0 failed; the probe lines now read `(kustomize output)` |
+| checker `--task 4 --base http://localhost` | 15 passed, 0 warnings, 0 failed; the probe lines now read `(kustomize output)` |
 | `GET /api/patients/199/risk/deterioration` through the Ingress | 200 `scored` 0.0 low, hour 145, 22 hours of vitals, `trained_at 2026-10-14T12:10:45Z` (the rerun's card), `stored: true` |
 
 ## 17. GPU training made required (2026-10-15)
 
-After the curriculum review, the early-warning run has no cutline. `scripts/check_submission.py --task 2`
-now fails the line "trained on an AWS GPU instance" unless that run's `training_run.json` has
-`trained_on: ec2` and an EC2 instance id in `instance_hint`, and fails the GPU-timing line unless
-`device` is `cuda`, `gpu_name` is set and the CUDA epoch beats the CPU epoch. The readmission run keeps
-its WARN cutline. Run against this reference (laptop RTX 4090, `trained_on: local`):
+After the curriculum review, the early-warning run has no cutline. The Task 2 Check-list line on the
+GPU run requires that run's `training_run.json` to have `trained_on: "ec2"`, an EC2 instance id in
+`instance_hint`, `device: "cuda"`, a non-null `gpu_name`, and `epoch_seconds.cuda` below
+`epoch_seconds.cpu`. This reference was trained on a laptop (RTX 4090, `trained_on: local`), so its
+early-warning run is local and would fail that line, by design: the GPU part passes (NVIDIA GeForce
+RTX 4090, one epoch cpu 5.63 s, cuda 0.6 s), the EC2 part does not. It passes once the run is
+repeated on the lab's `g4dn.xlarge` and its record and artifact are committed. The readmission run
+is local too and would also fail its Task 2 line since 2026-10-19 (section 18).
 
-```
-WARN  trained on AWS (training/runs/2026-10-11/training_run.json)  (trained_on is local: the cutline, reported not failed)
-FAIL  trained on an AWS GPU instance (training/runs/2026-10-14-deterioration/training_run.json)  (trained_on 'local', instance None; a laptop or Colab run does not count)
-PASS  GPU run shows a GPU and a faster CUDA epoch (...)  (NVIDIA GeForce RTX 4090: one epoch cpu 5.63 s, cuda 0.6 s)
-16 passed, 1 warnings, 1 failed
-```
+## 18. Checker removed, one path (2026-10-19)
 
-The failure is expected: the reference was trained on a laptop. It passes once the run is repeated
-on the lab's `g4dn.xlarge` and its record and artifact are committed.
+After a second curriculum review the repository no longer ships a submission checker. Tasks 2 to 4
+close with the platform's automated check, which tests the lines of each task's Check-list; the old
+script is kept for the platform-test authors outside this repository. `scripts/smoke.py` stays. The
+readmission model and the stay summary (questions A and G1) are worked examples only: students pick
+their own clinical question and their own generative or agentic feature, and the readmission-style
+CPU run of their own question must also say `trained_on: "ec2"`.

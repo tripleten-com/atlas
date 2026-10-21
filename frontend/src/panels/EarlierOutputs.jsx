@@ -5,8 +5,8 @@ import { useApi } from "../hooks";
 import { formatDateTime, formatPercent } from "../lib/format";
 
 // The last few outputs an AI feature produced for this patient, read from the document store
-// through GET /api/patients/{id}/ai/history. RiskCard and SummaryCard both show it under their
-// result. Four states, each in words:
+// through GET /api/patients/{id}/ai/history. RiskCard, EarlyWarningCard and SummaryCard all show it
+// under their result. Four states, each in words:
 //   loading               a small spinner
 //   history unavailable   the store could not be read (`stored: false`); say so rather than
 //                         show an empty list as if nothing had ever been scored

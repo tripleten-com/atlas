@@ -30,6 +30,13 @@ models/*
 training/runs/*/*.joblib
 training/runs/*/*.onnx
 
+# local leftovers the task pages tell you to make and never commit: rehearsal training runs
+# (--out rehearsal, --out rehearsal-deterioration), the tiny CSV for the lab rehearsal, and
+# document-store backups (docs/AI_STORE.md)
+rehearsal*/
+training/data/tiny.csv
+backups/
+
 # the real Kubernetes secret file; k8s/base/secret.example.env is the committed template
 k8s/secret.env
 

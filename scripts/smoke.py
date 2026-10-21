@@ -14,12 +14,29 @@ Ingress, so its own /health is skipped unless you pass --feed as well (for examp
 `kubectl -n atlas port-forward svc/meridian 18200:8100`). The deliveries check still runs,
 because it reads the API.
 
-Standard library only, so it runs anywhere Python 3.10+ does. Exits non-zero on the first failure.
+Your own routes: pass each with --route (repeat it), or list them in the SMOKE_ROUTES
+environment variable separated by semicolons. A route is a method and a path, optionally
+followed by a JSON object that is sent as the request body (a route that reads a question from
+the body needs one). {patient_id} becomes the Test Facility inpatient the record check opened,
+and {scored_patient_id} the patient the readmission-risk check scored:
+
+    python scripts/smoke.py --route "GET /api/patients/{patient_id}/risk/sepsis"                             --route "POST /api/patients/{scored_patient_id}/discharge-draft"
+    python scripts/smoke.py --route 'POST /api/patients/{patient_id}/ask {"question": "Why was she admitted?"}'
+    SMOKE_ROUTES="GET /api/patients/{patient_id}/risk/sepsis;POST /api/patients/{patient_id}/discharge-draft"
+
+Each one is called with the demo token. Any 2xx (200, or 202 for a queued job) is ok; the
+honest states 404 "not applicable", 503 (no model or no key) and 429 (daily limit reached) are
+skips; anything else fails. A body cannot contain a semicolon inside SMOKE_ROUTES; use --route
+for that one. With no --route and no SMOKE_ROUTES, only the worked examples are checked.
+
+Standard library only, so it runs anywhere Python 3.10+ does. Exits 0 when every check passed or
+was skipped, 1 on the first failure, 2 when a --route or SMOKE_ROUTES entry cannot be read.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -68,6 +85,34 @@ def detail_of(body: object) -> str:
     return body.get("detail", "") if isinstance(body, dict) else str(body)
 
 
+METHODS = ("GET", "POST", "PUT", "PATCH")
+
+
+def parse_routes(entries: list[str]) -> list[tuple[str, str, dict | None]]:
+    """'POST /api/x {"question": "..."}' into ("POST", "/api/x", {"question": "..."}). The JSON
+    body is optional. Exits 2 on an entry it cannot read. The method is required: Git Bash
+    rewrites a lone argument that starts with / into a Windows path."""
+    routes = []
+    for entry in entries:
+        parts = entry.strip().split(maxsplit=2)
+        if not parts:
+            continue
+        if len(parts) < 2 or parts[0].upper() not in METHODS or not parts[1].startswith("/"):
+            print(f"cannot read route {entry!r}: use 'GET /api/...' or 'POST /api/... {{\"question\": \"...\"}}'")
+            sys.exit(2)
+        body = None
+        if len(parts) == 3:
+            try:
+                body = json.loads(parts[2])
+            except ValueError:
+                body = None
+            if not isinstance(body, dict):
+                print(f"cannot read the body of route {entry!r}: it must be one JSON object")
+                sys.exit(2)
+        routes.append((parts[0].upper(), parts[1], body))
+    return routes
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default=None, help="one address for the API and the web app (the Kubernetes Ingress)")
@@ -77,7 +122,10 @@ def main() -> None:
     parser.add_argument("--email", default="clinician@riverside.example")
     parser.add_argument("--password", default="atlas-demo")
     parser.add_argument("--no-summary", action="store_true", help="do not call the stay-summary route (it spends tokens)")
+    parser.add_argument("--route", action="append", default=[], metavar='"METHOD /path"',
+                        help="one of your own routes to check after the worked examples; repeat for more")
     args = parser.parse_args()
+    extra = parse_routes(args.route + os.environ.get("SMOKE_ROUTES", "").split(";"))
 
     if args.base:
         base = args.base.rstrip("/")
@@ -158,6 +206,19 @@ def main() -> None:
             check("stay summary", status == 200 and bool(result.get("summary")) and len(result.get("sources", [])) > 0,
                   f"{result['input_tokens']}+{result['output_tokens']} tokens, {result['elapsed_ms']} ms, {len(result['sources'])} sources"
                   if status == 200 else f"HTTP {status} {detail_of(result)}")
+
+    # The student's own routes, after the worked examples so a broken platform fails first.
+    for method, path, route_body in extra:
+        url = args.api + path.replace("{patient_id}", str(patient_id)).replace("{scored_patient_id}", str(item["id"]))
+        status, result = call(url, token, body=route_body, method=method)
+        label = f"{method} {path}" + (" (with body)" if route_body is not None else "")
+        if status == 404 and "not applicable" in detail_of(result).lower():
+            skip(label, f"server says: {detail_of(result)}")
+        elif status in (429, 503):
+            skip(label, f"HTTP {status}, server says: {detail_of(result)}")
+        else:
+            ok = 200 <= status < 300
+            check(label, ok, f"HTTP {status}" + ("" if ok else f" {detail_of(result)}"))
 
     status, _ = call(args.web, accept="text/html")  # the dev server only serves the page to browsers
     check("web app", status == 200, f"HTTP {status}")

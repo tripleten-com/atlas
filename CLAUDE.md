@@ -22,9 +22,9 @@ or a panel, and `docs/AI_STORE.md` before touching the store.
   must pass before you finish a change. `ruff check --config backend/ruff.toml training evals
   scripts` covers the scripts outside the backend.
 - `docker compose exec frontend npx vite build` must pass for frontend changes.
-- `python scripts/check_submission.py --task 2|3|4` is the automated check that closes the
-  students' Tasks 2 to 4; the reference must pass it (Task 4 needs the cluster up). Task 3 spends
-  real tokens (one summary plus the ten eval cases). `scripts/README.md` says what each reads.
+- Tasks 2 to 4 close with the platform's automated check, which tests the Check-list lines on
+  each task page; the repository ships no checker. The reference passes every line except the
+  Task 2 GPU line, by design: its runs were trained on a laptop and say `trained_on: local`.
 - Demo login: `clinician@riverside.example` / `atlas-demo` (admin: `admin@riverside.example`;
   the other organisation: `clinician@harborview.example`).
 - Database: `docker compose exec db psql -U atlas -d atlas`, or `localhost:5433` from the host.

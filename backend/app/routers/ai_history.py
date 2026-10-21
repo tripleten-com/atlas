@@ -8,7 +8,9 @@ Behind auth and the tenant boundary like every other patient route. The answers 
     404  Patient not found   (missing, or another tenant's; the usual 404)
 
 The Postgres lookup runs first (tenancy.load_patient), so another organisation's patient id is a
-404 before the store is touched. Then the store is queried with the caller's tenant_id from the
+404 before the store is touched. Predictions, generations and agent runs are all listed; an agent
+run shows its status ("completed" or "stopped") as `state` and the start of its answer as
+`text_preview`, so any feature name works as the filter without a router change. Then the store is queried with the caller's tenant_id from the
 token. `stored` is false when the store could not be read; the items are then empty and the card
 says "history unavailable" instead of showing an empty list as if nothing had ever been scored.
 """
@@ -29,7 +31,7 @@ router = APIRouter(tags=["ai history"])
 @router.get("/api/patients/{patient_id}/ai/history", response_model=AiHistory)
 def ai_history(
     patient_id: int,
-    feature: str | None = Query(None, description="readmission-risk, early-warning or stay-summary; omit for all"),
+    feature: str | None = Query(None, description="Any stored feature name, e.g. readmission-risk, early-warning, stay-summary or an agent feature; omit for all"),
     limit: int = Query(5, ge=1, le=50),
     user: CurrentUser = Depends(get_current_user),
     conn: Connection = Depends(get_db),
