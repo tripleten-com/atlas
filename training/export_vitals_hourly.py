@@ -138,7 +138,7 @@ def main() -> None:
     onset_count = int((static["onset_hour"] != "").sum())
     measured_hours = int(hourly[list(VITALS)].notna().any(axis=1).sum())
     print(f"encounters: {len(static)} discharged inpatient stays, {static['patient_id'].nunique()} patients")
-    print(f"onset encounters: {onset_count} ({onset_count / len(static):.1%}) crossed the deterioration line after hour 12")
+    print(f"onset encounters: {onset_count} ({onset_count / len(static):.1%}) crossed the deterioration line at or after hour 12")
     print(f"encounter-hours: {len(hourly)} rows, {measured_hours} with at least one measurement ({measured_hours / len(hourly):.1%})")
     print(f"vitals rows read: {len(vitals)}")
     print(f"wrote {VITALS_OUT.as_posix()} ({VITALS_OUT.stat().st_size / 1024 / 1024:.1f} MB), "

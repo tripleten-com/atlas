@@ -19,7 +19,7 @@ imported inside `build_gru_net()` only, so the API (which never installs torch) 
 onset rule and the window builder without it.
 
 Hours are counted from `admit_date`: `hour_index` 0 is the first hour of the stay, and a
-measurement at 12h30m after admission sits in hour 12. "After hour 12" therefore means
+measurement at 12h30m after admission sits in hour 12. "At or after hour 12" therefore means
 `hour_index >= 12`: twelve full hours have passed.
 """
 from __future__ import annotations
@@ -46,7 +46,7 @@ WINDOW_HOURS = 24      # the model sees the last 24 hours
 HORIZON_HOURS = 12     # and predicts the next 12
 FIRST_AS_OF_HOUR = 12  # no forecast before twelve hours of the stay have passed
 
-# The reference onset rule: the first vitals set after hour 12 of the stay with at least two of
+# The reference onset rule: the first vitals set at or after hour 12 of the stay with at least two of
 # these crossings. Students may change the thresholds in PROPOSAL.md; the serving side reads the
 # rule it was trained with from deterioration.json, so change it here and retrain.
 ONSET_THRESHOLDS = {
