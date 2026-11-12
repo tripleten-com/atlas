@@ -1,7 +1,7 @@
 # Optional: scale the API between 2 and 5 Pods on CPU. Not part of the required build.
 #
 # The autoscaler needs CPU numbers, which come from metrics-server. kind does not ship it:
-#   kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#   kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.8.0/components.yaml
 #   kubectl -n kube-system patch deployment metrics-server --type=json \
 #     -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
 # (the patch is needed because kind's node certificates are self-signed). Wait a minute, check
