@@ -280,7 +280,7 @@ kubectl -n atlas get deploy/api -o jsonpath='{.spec.template.spec.containers[0].
 
 The bad pod is terminated and the image is back on the previous tag. The same drill with a
 tag that exists but whose code fails `/health` looks slightly different: the new pod starts,
-the startup probe fails for up to 150 seconds, and the pod is restarted, again without the
+the startup probe fails for up to five minutes, and the pod is restarted, again without the
 old pods being removed.
 
 ## 8. The broken Deployment exercise
@@ -315,6 +315,9 @@ kubectl -n atlas delete job atlas-seed --ignore-not-found
 kubectl apply -k k8s/base
 kubectl -n atlas rollout status deploy/api --timeout=180s
 ```
+
+On a slow laptop the rollout can take several minutes; if `rollout status` times out, run it
+again. The RESTARTS column of `kubectl -n atlas get pods` should stay at 0.
 
 The `delete job` line matters when the seed Job from the last apply is still there (it removes
 itself ten minutes after finishing). A Job's pod template is immutable, so applying the base
@@ -371,10 +374,11 @@ Changing a value in `configmap.yaml` and applying does not restart anything by i
   If it fails, `kubectl -n atlas logs job/atlas-seed` says why, and
   `kubectl -n atlas delete job atlas-seed` plus `kubectl apply -k k8s/base` runs it again.
 - Every request through `http://localhost` is slow by a constant amount (about 0.2 s on the
-  reference Windows laptop), even the static page from nginx. That is the Docker Desktop port
-  mapping into the kind node, not Atlas: `curl -w '%{time_total}\n' localhost/health` and the
-  same call on Compose (`localhost:8000/health`, about 0.02 s) show the difference. Measure
-  inside the cluster when the number matters.
+  reference Windows laptop), even the static page from nginx. That is name lookup, not Atlas:
+  `localhost` is tried as IPv6 first, kind publishes the port on IPv4 only, and each new
+  connection waits for the fallback. `curl -w '%{time_total}\n' localhost/health` (0.24 s) and
+  `curl -w '%{time_total}\n' 127.0.0.1/health` (0.01 s) show the difference; use
+  `http://127.0.0.1` when the number matters.
 - The pods are `Running` but the browser says it cannot reach the API: look at
   `curl -s localhost/config.js`. It should say `apiUrl: ""`, same origin, set by an empty
   `VITE_API_URL` in `web.yaml`. If it names a host and port, something put a value there and

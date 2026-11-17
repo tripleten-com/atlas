@@ -103,8 +103,11 @@ the user and password as environment variables, so you never type them:
 kubectl -n atlas exec mongo-0 -- sh -c 'mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin atlas_ai --eval "db.predictions.countDocuments()"'
 ```
 
-Put the query in place of `db.predictions.countDocuments()`, using single quotes inside it
-(`db.predictions.find({feature: 'early-warning'}).limit(5)`). Do not open an interactive
+Put the query in place of `db.predictions.countDocuments()`. The query sits inside double quotes
+inside single quotes, so write a string as `\"...\"` and every `$` as `\$`
+(`db.predictions.find({feature: \"early-warning\"}).limit(5)`,
+`db.predictions.countDocuments({tenant_id: {\$exists: false}})`). A single quote would end the
+command, and an unescaped `$` is eaten by the shell. Do not open an interactive
 `mongosh` inside the Pod: the shell is a Node.js process that shares the Pod's memory limit with
 the database, and a long session can get `mongo-0` OOMKilled. For an interactive session, forward
 the port and use the `mongosh` on your machine instead (the password is the `MONGO_PASSWORD` in
@@ -177,13 +180,16 @@ and the `mongo:7` image contains them, which is what the commands below use.
 Compose:
 
 ```bash
-# back up to ./backups/ai_store-<date> on your machine
+mkdir -p backups      # once; backups/ is already in .gitignore (git check-ignore -v backups/)
+
+# back up to ./backups/ai_store-<date>.archive on your machine
 docker compose exec -T mongo mongodump --quiet -u atlas -p atlas-dev-only --authenticationDatabase admin \
   --db atlas_ai --archive > backups/ai_store-$(date +%F).archive
 
-# restore it (--drop replaces the collections with the archive's contents)
+# restore one (--drop replaces the collections with the archive's contents); put the date of
+# the backup you want in place of YYYY-MM-DD
 docker compose exec -T mongo mongorestore --quiet -u atlas -p atlas-dev-only --authenticationDatabase admin \
-  --drop --archive < backups/ai_store-2026-10-14.archive
+  --drop --archive < backups/ai_store-YYYY-MM-DD.archive
 ```
 
 The cluster, through `kubectl exec` into the `mongo-0` Pod (the user and password are the Secret's
@@ -194,8 +200,9 @@ The cluster, through `kubectl exec` into the `mongo-0` Pod (the user and passwor
 kubectl -n atlas exec mongo-0 -- sh -c 'mongodump --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --db atlas_ai --archive' \
   > backups/ai_store-cluster-$(date +%F).archive
 
+# -i passes your file to the Pod as standard input; without it mongorestore reads nothing
 kubectl -n atlas exec -i mongo-0 -- sh -c 'mongorestore --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --drop --archive' \
-  < backups/ai_store-cluster-2026-10-14.archive
+  < backups/ai_store-cluster-YYYY-MM-DD.archive
 ```
 
 The StatefulSet's disk (`mongo-data-mongo-0`) survives Pod restarts and `kubectl apply`, not

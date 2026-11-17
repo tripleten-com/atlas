@@ -295,8 +295,9 @@ What the reference does not do, so you know where the edges are:
   no longer match until you run `make_golden.py` again. `REFERENCE_NOTES.md` records both runs.
 - `k8s/optional/hpa.yaml` is lesson material and untested here (no metrics-server installed).
 - No TLS. kind maps port 443 but nothing terminates it; everything is plain http://localhost.
-- Postgres is one replica with no backups. The PersistentVolumeClaim survives pod restarts,
-  not `kind delete cluster`.
+- Postgres and MongoDB are one replica each, with no scheduled backup (the document store can be
+  dumped by hand, `docs/AI_STORE.md`). Their PersistentVolumeClaims survive pod restarts, not
+  `kind delete cluster`.
 - Secrets are plain Kubernetes Secrets created from a local env file; there is no external
   secret store and no rotation.
 - No rate limiting on login or on the AI routes beyond the daily token ceiling, and no
@@ -319,7 +320,9 @@ What the reference does not do, so you know where the edges are:
 - The risk card says "Model unavailable". `models/readmission.joblib` is missing, `MODEL_PATH`
   points somewhere else, or `MODEL_SHA256` is set and does not match the file. Run
   `training/train.py` and copy the artifact in, or restore the file, then
-  `docker compose restart backend` and read its first log lines. The early-warning card says the
+  `docker compose restart backend` and read its first log lines (after a change to `.env`, use
+  `docker compose up -d backend` instead: `restart` keeps the old environment). The early-warning
+  card says the
   same when `models/deterioration.onnx` or its `.json` is missing or `MODEL_DETERIORATION_SHA256`
   does not match.
 - The cards say "history unavailable" and `/health` says `"ai_store":"unavailable"`. The `mongo`

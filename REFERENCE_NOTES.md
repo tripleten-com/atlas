@@ -237,10 +237,10 @@ Ladder of proof through the Ingress, all on http://localhost, observed in the fi
 Why the cluster smoke run is slow: every request through `http://localhost` costs about 0.21 s
 on this machine whatever it asks for (`curl -w '%{time_total}'`: `/health` 0.216 s, `/`
 served by nginx 0.213 s, `/api/facilities` 0.211 s, the risk route 0.229 s), against 0.011 to
-0.040 s for the same calls on Compose. The floor is the Docker Desktop for Windows port
-mapping between `localhost` and the kind node, not the pods; a student measuring latency
-should measure inside the cluster (`kubectl exec` plus `curl http://api:8000/...`) or accept the
-constant offset.
+0.040 s for the same calls on Compose. The floor is name lookup, not the pods: `localhost` is
+tried as IPv6 first and kind publishes the port on IPv4 only (measured 2026-11-17: `/health`
+0.24 s via `localhost`, 0.01 s via `127.0.0.1`). A student measuring latency should use
+`http://127.0.0.1` or measure inside the cluster (`kubectl exec` plus `curl http://api:8000/...`).
 
 Rollback drill and the broken Deployment exercise: run and recorded by the build agent on the
 first cluster (`set image deploy/api api=atlas-api:sha-bad` gives a third pod in ErrImagePull
@@ -693,3 +693,19 @@ over the dashboard, the patient list, a patient record and the readmission route
 | `broken-api.yaml` at 0.2 CPU | as shipped: `couldn't find key JWT_SECRETS in Secret atlas/atlas-secrets`, the old Pods keep serving; three faults fixed: rolled out in 315 s, `MONGO_URL` set, `smoke.py` saved and read back |
 | `broken-api.yaml` at 0.3 CPU, with the api's probe timeouts | three faults fixed: rolled out in 121 s, saved and read back, 0 restarts; `kubectl apply -k` restored the working api in 154 s |
 | The floor | at 0.2 CPU kube-scheduler restarted 7 times and kube-controller-manager 7 (leader lease lost while the API server was slow), so a new Pod can sit in `Pending` with no events until the scheduler is back. That is Kubernetes itself, not Atlas, and no manifest setting changes it |
+
+## 20. Task 5 QA pass (2026-11-17)
+
+Every Task 5 step was run on a throwaway kind cluster (`atlas-qa`, images `sha-d2f2bfb`), and the
+findings were fixed in the lesson and here.
+
+| Measurement | Result |
+|---|---|
+| LLM endpoint that never answers (`LLM_BASE_URL=http://192.0.2.1/v1`) | before: 502 after 61.4 s (20 s deadline, the SDK's two retries); now `max_retries=0`: `APITimeoutError` after 20.1 s (`docker compose exec -e ... backend python -c "llm.chat(...)"`) |
+| LLM endpoint on a closed port (`http://127.0.0.1:9/v1`) | 502 in 1.6 s: the connection is refused at once, so this does not test the deadline |
+| Meridian scaled to 0 for 50 s and 3.5 min, then back | `resync RGH pulled 0 events`, `resync RNC pulled 0 events`: Meridian publishes nothing while down and delivers by webhook once back; the watermark moves again by itself |
+| Postgres scaled to 0 | through the Ingress `/health` 500, one request held 30 s by the pool, then both api Pods 0/1 and ingress-nginx answers 503 on every path; `/health/live` inside a Pod `{"status":"alive"}`; api RESTARTS 0; the worker restarted 3 times in 2 minutes and recovered; api Ready again about 30 s after the database |
+| `mongo-0` scaled to 0 | readmission and early warning 2.0 s with `stored: false`, history `{"items":[],"stored":false}`, `/health` `ai_store: unavailable`, api 1/1 |
+| One-shot `mongosh --eval` with `'early-warning'` or `$exists` inside `sh -c '...'` | `ReferenceError` / `SyntaxError`; `\"early-warning\"` and `\$exists` work (re-checked on the reference cluster) |
+| Backend tests after the retry change | `docker compose exec backend pytest`: 73 passed, 1 skipped; ruff clean |
+| Committed `newTag` | was `sha-5b1b962` and the exercise `sha-d5956e4`, neither on master (rewritten history); now the tag of the images built from this commit |

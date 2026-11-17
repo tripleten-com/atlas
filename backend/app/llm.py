@@ -17,7 +17,8 @@ from openai import OpenAI
 
 from .config import settings
 
-# One request may take a while on a busy endpoint, but a clinician is waiting: cap it at 20 s.
+# One request may take a while on a busy endpoint, but a clinician is waiting: cap it at 20 s,
+# one try. With the SDK's default two retries a dead endpoint kept the request open for a minute.
 TIMEOUT_SECONDS = 20.0
 
 _client: OpenAI | None = None
@@ -32,8 +33,9 @@ def client() -> OpenAI:
     """Build the client once and reuse it; it holds a connection pool."""
     global _client
     if _client is None:
-        # Retries stay at the SDK default (2 quick retries on connection errors and 5xx).
-        _client = OpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key, timeout=TIMEOUT_SECONDS)
+        # No automatic retries: the route answers 502 and the clinician can press the button again.
+        _client = OpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key, timeout=TIMEOUT_SECONDS,
+                         max_retries=0)
     return _client
 
 
