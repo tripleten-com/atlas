@@ -22,8 +22,8 @@ resources:
 
 images:
   - name: atlas-api
-    newTag: sha-5b1b962
+    newTag: sha-e6df0cd
   - name: atlas-web
-    newTag: sha-5b1b962
+    newTag: sha-e6df0cd
   - name: atlas-meridian
-    newTag: sha-5b1b962
+    newTag: sha-e6df0cd

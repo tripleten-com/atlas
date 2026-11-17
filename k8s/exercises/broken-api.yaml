@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: atlas-api:sha-d5956e4
+          image: atlas-api:sha-e6df0cd
           imagePullPolicy: IfNotPresent
           command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
           ports:
