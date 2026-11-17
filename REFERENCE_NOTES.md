@@ -709,3 +709,17 @@ findings were fixed in the lesson and here.
 | One-shot `mongosh --eval` with `'early-warning'` or `$exists` inside `sh -c '...'` | `ReferenceError` / `SyntaxError`; `\"early-warning\"` and `\$exists` work (re-checked on the reference cluster) |
 | Backend tests after the retry change | `docker compose exec backend pytest`: 73 passed, 1 skipped; ruff clean |
 | Committed `newTag` | was `sha-5b1b962` and the exercise `sha-d5956e4`, neither on master (rewritten history); now the tag of the images built from this commit |
+
+Confirmation run on the final images (`sha-e6df0cd`, committed `k8s/base` applied unchanged to a
+fresh kind cluster, LLM key set): everything Ready in 133 s with 0 restarts. `smoke.py --base`
+passed 17 checks with 1 skip (Meridian has no Ingress route), the stay summary included (1,260 +
+335 tokens, 4.1 s, saved and read back). The dead endpoint gave 502 in 20.1 s and an `error`
+usage row. Meridian at 0: `last_error` `Meridian unreachable: ConnectError` within 75 s, records
+and scores fine, `resync RGH pulled 0 events`. `mongo-0` at 0: scores `stored: false` in 2.0 s,
+api 1/1; the first score right after `mongo-0` was Ready again still said `stored: false`, and
+later ones were saved. Database at 0: `/health` 500 after 30.2 s, then 503 on every path,
+`/health/live` inside a Pod `{"status":"alive"}`, api restarts 0, worker restarts 2, api Ready
+47 s after scaling the database back. The rollback drill and undo passed. The dump and restore
+with the `docs/AI_STORE.md` commands: 11 / 4 documents before, 3 / 4 after deleting 8, 11 / 4
+after the restore, indexes intact. The escaped one-shot queries worked. Delete the seed Job,
+then `apply -k`: fine. Compose `smoke.py`: 18 ok, summary saved and read back.
