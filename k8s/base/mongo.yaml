@@ -13,11 +13,9 @@
 # --wiredTigerCacheSizeGB 0.25 caps the storage engine's cache; without it MongoDB takes half
 # of what it believes is the machine's memory, which on a laptop cluster is the whole node.
 #
-# The memory limit is 1Gi, not 512Mi. Every `mongosh` started inside the Pod (the readiness
-# probe, and any `kubectl exec mongo-0 -- mongosh ...`) is a Node.js process that counts against
-# the same limit, and at 512Mi an interactive mongosh session was enough to get mongo-0 OOMKilled.
-# The CPU limit is one core for the same reason: at half a core a mongosh start is slow enough
-# to miss a probe deadline on a laptop that is short of memory.
+# The memory limit is 1Gi, not 512Mi. Every `mongosh` started inside the Pod (any
+# `kubectl exec mongo-0 -- mongosh ...`) is a Node.js process that counts against the same
+# limit, and at 512Mi an interactive mongosh session was enough to get mongo-0 OOMKilled.
 # Ask the store with a one-shot `mongosh --quiet --eval "..."` (k8s/README.md, docs/AI_STORE.md)
 # rather than an interactive shell inside the Pod.
 apiVersion: apps/v1
@@ -61,30 +59,30 @@ spec:
           volumeMounts:
             - name: mongo-data
               mountPath: /data/db
-          # Startup and liveness are plain TCP checks on the port. They only ask "is mongod still
-          # listening", start no process inside the Pod and answer in milliseconds even on a
-          # laptop short of memory. The startup probe gives the first start up to 150 seconds
-          # (creating the root user restarts mongod once); liveness only begins after it passes.
+          # All three probes are plain TCP checks on the port: "is mongod listening?". They start no
+          # process inside the Pod and answer in milliseconds even on a laptop short of CPU. Why
+          # not run `mongosh` as the probe: it is a Node.js program, and on a slow machine it can
+          # take longer than any sensible timeout. A failed readiness probe marks mongo-0 not
+          # ready, and because this Service is headless, the Pod's DNS name then disappears and
+          # the api cannot save anything. Whether the store really saves and reads back is
+          # checked end to end by scripts/smoke.py, which is the right place for that.
+          # The startup probe gives the first start up to 150 seconds (creating the root user
+          # restarts mongod once); readiness and liveness only begin after it passes.
           startupProbe:
             tcpSocket:
               port: mongo
             periodSeconds: 5
             failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: mongo
+            periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             tcpSocket:
               port: mongo
             periodSeconds: 20
             timeoutSeconds: 5
-            failureThreshold: 3
-          # Readiness asks MongoDB itself with `ping` (no login needed, so it works before and
-          # after the root user exists). mongosh is a Node.js process that can take several
-          # seconds to start on a busy laptop, hence the long timeout. A slow answer here only
-          # takes mongo-0 out of the Service for a moment; it never restarts the Pod.
-          readinessProbe:
-            exec:
-              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-            periodSeconds: 15
-            timeoutSeconds: 10
             failureThreshold: 3
           resources:
             requests:

@@ -671,3 +671,25 @@ script is kept for the platform-test authors outside this repository. `scripts/s
 readmission model and the stay summary (questions A and G1) are worked examples only: students pick
 their own clinical question and their own generative or agentic feature, and the readmission-style
 CPU run of their own question must also say `trained_on: "ec2"`.
+
+## 19. Low-CPU laptop test of the cluster (2026-11-17)
+
+QA on an 8 GB Mac (Docker at 4.79 GiB, Compose stopped) saw `mongo-0` restart, then, with the
+first probe change (`d2f2bfb`), its `mongosh` readiness probe time out after 10 s. The headless
+`mongo` Service then dropped the Pod's address and the cards said "not saved". Reproduced and
+fixed on a second kind cluster on this laptop (`atlas-qa`, host port 8088, images
+`sha-d2f2bfb`), with the node container limited by `docker update --cpus <n> --memory 4.79g`.
+The reference cluster `atlas` was not touched. Browsing load: a script with N threads looping
+over the dashboard, the patient list, a patient record and the readmission route.
+
+| Measurement | Result |
+|---|---|
+| One `mongosh` ping inside `mongo-0` | 0.37 s wall and 0.37 CPU-seconds (user 0.26, sys 0.11) at 2 CPUs; 1.0 s at 0.5; 2.0 to 2.5 s at 0.3; 5.6 s at 0.2; 21.9 s at 0.15 |
+| CPU at rest, 2 CPUs (`crictl stats`, 30 s) | 75 mCPU in containers: kube-apiserver 25, etcd 16, controller-manager 10, scheduler 4, ingress 4, mongo 3, postgres 2.5, api 1.7 per Pod, worker 1.6, meridian 1.4, coredns 2.2, web 0; all Atlas Pods together about 13. `docker stats` for the node: 12 to 16 % of one core |
+| Cost of the `mongosh` probes | before `d2f2bfb` (readiness every 10 s, liveness every 20 s): about 56 mCPU, four times all Atlas Pods together; at `d2f2bfb` (readiness every 15 s): about 25; now (TCP): none |
+| `d2f2bfb` at 0.15 CPU, 4-thread load for 180 s | `Readiness probe failed: ... timed out after 10s` on `mongo-0`, its endpoint not ready throughout; 18 of 45 readmission answers `stored: false`; `pg_isready` readiness `timed out after 1s` |
+| These manifests at 0.15 CPU, same load | `mongo` endpoint ready throughout, 62 of 62 `stored: true`, 0 restarts |
+| These manifests at 0.2 CPU, 2-thread load running | `smoke.py` saved and read back; `kubectl delete pod mongo-0` Ready again in 16 s, 168 predictions before and after; `rollout restart deploy/api` done in 300 s; `smoke.py` saved and read back; 0 restarts in `atlas` |
+| `broken-api.yaml` at 0.2 CPU | as shipped: `couldn't find key JWT_SECRETS in Secret atlas/atlas-secrets`, the old Pods keep serving; three faults fixed: rolled out in 315 s, `MONGO_URL` set, `smoke.py` saved and read back |
+| `broken-api.yaml` at 0.3 CPU, with the api's probe timeouts | three faults fixed: rolled out in 121 s, saved and read back, 0 restarts; `kubectl apply -k` restored the working api in 154 s |
+| The floor | at 0.2 CPU kube-scheduler restarted 7 times and kube-controller-manager 7 (leader lease lost while the API server was slow), so a new Pod can sit in `Pending` with no events until the scheduler is back. That is Kubernetes itself, not Atlas, and no manifest setting changes it |

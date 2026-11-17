@@ -343,9 +343,13 @@ Changing a value in `configmap.yaml` and applying does not restart anything by i
 - `kind load docker-image` must be repeated after every image build. The cluster does not
   see your local Docker images otherwise.
 - Memory. With the Compose stack stopped, about 5 GB for Docker runs the cluster; with Compose
-  running beside it, about 8 GB. With less, pods sit in `Pending`, get `OOMKilled`, or answer
-  their probes too slowly and get restarted. The RESTARTS column of `kubectl -n atlas get pods`
-  shows it. Stop Compose (`docker compose stop`) before anything else.
+  running beside it, about 8 GB. With less, pods sit in `Pending` or get `OOMKilled`. Stop
+  Compose (`docker compose stop`) before anything else.
+- A slow laptop. Every probe allows 5 seconds, MongoDB's probes are TCP checks that start no
+  process, and the api gets up to 5 minutes to start, so a machine short of CPU is slower
+  rather than broken: a rolling update of the api can take several minutes. The RESTARTS
+  column of `kubectl -n atlas get pods` should stay at 0. `scripts/smoke.py` checks that the
+  AI outputs are saved to the document store and read back, not only that the routes answer.
 - A StatefulSet's PersistentVolumeClaim is not deleted with the StatefulSet. After
   `kubectl -n atlas delete statefulset mongo` (or `kubectl delete namespace atlas`) the claim
   `mongo-data-mongo-0` may remain, and the next apply reuses it, old data included. A clean

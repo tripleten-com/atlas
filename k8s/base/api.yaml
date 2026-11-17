@@ -2,9 +2,9 @@
 # /docs here.
 #
 # Three probes, three questions:
-#   startupProbe   "has it finished starting?"  /health, up to 30 x 5s = 150s. Until this
-#                  passes, the other two probes are off, so a slow first start (waiting for
-#                  the seed Job to create the schema) is not treated as a crash.
+#   startupProbe   "has it finished starting?"  /health, up to 60 x 5s = 5 minutes. Until
+#                  this passes, the other two probes are off, so a slow first start (waiting
+#                  for the seed Job, or a laptop short of CPU) is not treated as a crash.
 #   readinessProbe "can it take traffic?"       /health, which also checks the database. A
 #                  Pod that fails it is taken out of the Service but left running.
 #   livenessProbe  "is the process stuck?"      /health/live, which never touches the
@@ -85,26 +85,29 @@ spec:
             - name: MONGO_URL
               value: mongodb://$(MONGO_USER):$(MONGO_PASSWORD)@mongo:27017/atlas_ai?authSource=admin
           # /health also pings the document store, with a half-second budget when the store is
-          # down. The probes' default timeout is one second; three leaves room for that plus the
-          # database query on a busy laptop, so an outage of the store never fails readiness.
+          # down. The probes' default timeout is one second; five leaves room for that plus the
+          # database query on a laptop that is short of CPU, so an outage of the store never fails
+          # readiness and a slow answer never restarts the container.
           startupProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 30
+            timeoutSeconds: 5
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 10
-            timeoutSeconds: 3
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /health/live
               port: http
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6      # two minutes without an answer before a restart
           resources:
             requests:
               cpu: 100m

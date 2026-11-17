@@ -7,7 +7,9 @@
 What it checks, in order: /health, that patient data needs a token, the demo login, the
 facilities list, a patient record, the dashboard, the Meridian feed (when reachable), live
 deliveries, the readmission-risk route for a Test Facility patient, the stay-summary route
-(skipped when the server has no LLM key), and the web app.
+(skipped when the server has no LLM key), and the web app. For both AI routes it also checks
+that the answer was saved to the document store (`stored: true`) and reads it back through
+the history route, because both routes answer 200 even while the store is down.
 
 With --base, the API and the web app share one address. Meridian has no route through the
 Ingress, so its own /health is skipped unless you pass --feed as well (for example after
@@ -191,6 +193,16 @@ def main() -> None:
           f"patient {item['id']}: {scored['probability']} {scored['band']}, {scored['model_version']}" if scored
           else f"{last} after {tried} patients")
 
+    # Saved, not only answered. The route answers 200 even when the document store is down (it
+    # says so in `stored`), so a 200 alone proves nothing about the store. Check the flag, then
+    # read the same score back through the history route.
+    check("readmission risk saved to the document store", scored["stored"] is True, f"stored: {scored['stored']}")
+    status, history = call(f"{args.api}/api/patients/{item['id']}/ai/history?feature=readmission-risk&limit=1", token)
+    newest = history["items"][0] if status == 200 and history.get("items") else None
+    check("readmission risk read back from history",
+          status == 200 and history["stored"] is True and newest is not None and newest["probability"] == scored["probability"],
+          f"newest stored score {newest['probability']}" if newest else f"HTTP {status}, stored: {history.get('stored') if status == 200 else '?'}, no items")
+
     # The generative feature. 503 means the server has no LLM_API_KEY, which is fine for a
     # fresh clone, so it is a skip rather than a failure. 429 means today's token ceiling is
     # spent; the feature is wired up, so that is a skip too.
@@ -206,6 +218,11 @@ def main() -> None:
             check("stay summary", status == 200 and bool(result.get("summary")) and len(result.get("sources", [])) > 0,
                   f"{result['input_tokens']}+{result['output_tokens']} tokens, {result['elapsed_ms']} ms, {len(result['sources'])} sources"
                   if status == 200 else f"HTTP {status} {detail_of(result)}")
+            check("stay summary saved to the document store", result["stored"] is True, f"stored: {result['stored']}")
+            status, history = call(f"{args.api}/api/patients/{patient_id}/ai/history?feature=stay-summary&limit=1", token)
+            check("stay summary read back from history",
+                  status == 200 and history["stored"] is True and len(history["items"]) == 1,
+                  f"HTTP {status}, stored: {history.get('stored') if status == 200 else '?'}, {len(history.get('items', [])) if status == 200 else 0} items")
 
     # The student's own routes, after the worked examples so a broken platform fails first.
     for method, path, route_body in extra:

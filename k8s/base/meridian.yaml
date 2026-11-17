@@ -64,18 +64,23 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+          # Every probe here allows 5 seconds (the default is 1). On a laptop that is short of CPU a
+          # healthy container can take longer than a second to answer, and a missed liveness probe
+          # restarts it for nothing.
           readinessProbe:
             httpGet:
               path: /health
               port: http
             initialDelaySeconds: 5
-            periodSeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /health
               port: http
             initialDelaySeconds: 30
             periodSeconds: 20
+            timeoutSeconds: 5
           resources:
             requests:
               cpu: 100m

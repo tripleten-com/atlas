@@ -52,6 +52,9 @@ spec:
           # The same shell test twice: a heartbeat file younger than 120 seconds. Readiness has
           # no initial delay and fails quietly until the first loop; liveness waits a minute first,
           # because a restart is the wrong answer to "still waiting for the seed Job".
+          # Every probe here allows 5 seconds (the default is 1). On a laptop that is short of CPU a
+          # healthy container can take longer than a second to answer, and a missed liveness probe
+          # restarts it for nothing.
           readinessProbe:
             exec:
               command:
@@ -59,6 +62,7 @@ spec:
                 - -c
                 - test $(( $(date +%s) - $(stat -c %Y /tmp/worker-heartbeat) )) -lt 120
             periodSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 3
           livenessProbe:
             exec:
@@ -68,6 +72,7 @@ spec:
                 - test $(( $(date +%s) - $(stat -c %Y /tmp/worker-heartbeat) )) -lt 120
             initialDelaySeconds: 60   # the worker waits for the seed Job before its loop starts
             periodSeconds: 20
+            timeoutSeconds: 5
             failureThreshold: 3
           resources:
             requests:
