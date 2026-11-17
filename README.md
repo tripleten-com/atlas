@@ -26,8 +26,8 @@ Everything is synthetic. No real patients.
 ## Start it
 
 You need Docker Desktop (or Docker Engine with Compose v2), Python 3.12 for the scripts, and
-about 4 GB of free memory for the Compose stack (8 GB once you run the Kubernetes cluster as
-well: MongoDB now runs beside Postgres in both). On Windows, run every command in this repository in Git Bash (installed with git), not in
+about 4 GB of free memory for the Compose stack. For the Kubernetes cluster, stop Compose first
+and give Docker about 5 GB (`k8s/README.md` has the details). On Windows, run every command in this repository in Git Bash (installed with git), not in
 PowerShell or cmd: the commands use `curl`, `$(...)`, `&&` and `sha256sum`, which PowerShell
 either lacks or reads differently.
 

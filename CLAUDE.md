@@ -15,7 +15,8 @@ or a panel, and `docs/AI_STORE.md` before touching the store.
 - `docker compose up --build` starts everything; the app is on http://localhost:3000, the API
   on http://localhost:8000/docs, Meridian on http://localhost:8200, MongoDB on
   `localhost:27018`. A one-shot `seed` service migrates and seeds first; the API and the worker
-  wait for it. Docker Desktop needs 8 GB of memory once the kind cluster runs beside Compose.
+  wait for it. Docker Desktop needs 8 GB of memory once the kind cluster runs beside Compose,
+  about 5 GB for the cluster alone with Compose stopped (`docker compose stop`).
 - `python scripts/smoke.py` checks the whole stack (Compose). `python scripts/smoke.py --base
   http://localhost` checks the Kubernetes cluster through its Ingress.
 - `docker compose exec backend pytest` and `docker compose exec backend ruff check app tests`

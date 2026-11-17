@@ -26,9 +26,11 @@ k8s/
 
 ## Prerequisites
 
-- Docker Desktop with at least 8 GB of memory for Docker (Settings, Resources). The cluster
-  node, the ingress controller, the Atlas images, Postgres and MongoDB all live inside Docker;
-  6 GB was enough before the document store was added.
+- Docker Desktop with enough memory for Docker (Settings, Resources). The cluster node, the
+  ingress controller, the Atlas images, Postgres and MongoDB all live inside Docker. The
+  cluster node used about 2.7 GB on the reference run, so with the Compose stack stopped, about
+  5 GB for Docker is enough; that is the setting to use on a laptop with 8 GB in total. Running
+  the Compose stack at the same time needs about 8 GB for Docker.
 - `kubectl`. Docker Desktop installs one. Check with `kubectl version --client`.
 - `kind`. Windows: `winget install -e --id Kubernetes.kind`. macOS: `brew install kind`.
   Linux: download the release binary from https://kind.sigs.k8s.io. Check with `kind version`.
@@ -74,7 +76,12 @@ same image works anywhere.
 
 ## 2. Create the cluster and the ingress controller
 
+The cluster runs its own copy of every service, so stop the Compose stack first unless your
+machine has memory to spare. `stop` keeps its containers and data; `docker compose start`
+brings it back later exactly as it was.
+
 ```bash
+docker compose stop
 kind create cluster --name atlas --config k8s/kind-config.yaml
 kubectl config current-context        # kind-atlas
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/kind/deploy.yaml
@@ -335,9 +342,10 @@ Changing a value in `configmap.yaml` and applying does not restart anything by i
   `nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"`, which `ingress.yaml` does.
 - `kind load docker-image` must be repeated after every image build. The cluster does not
   see your local Docker images otherwise.
-- Docker Desktop needs at least 8 GB of memory for the cluster plus the images now that
-  MongoDB runs beside Postgres (6 GB was enough before). With less, pods sit in `Pending` or
-  get `OOMKilled`.
+- Memory. With the Compose stack stopped, about 5 GB for Docker runs the cluster; with Compose
+  running beside it, about 8 GB. With less, pods sit in `Pending`, get `OOMKilled`, or answer
+  their probes too slowly and get restarted. The RESTARTS column of `kubectl -n atlas get pods`
+  shows it. Stop Compose (`docker compose stop`) before anything else.
 - A StatefulSet's PersistentVolumeClaim is not deleted with the StatefulSet. After
   `kubectl -n atlas delete statefulset mongo` (or `kubectl delete namespace atlas`) the claim
   `mongo-data-mongo-0` may remain, and the next apply reuses it, old data included. A clean
