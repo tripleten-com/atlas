@@ -450,9 +450,17 @@ def main() -> None:
     train, val, test = grouped_split(windows, patient_of, args.seed)
     stats = fit_standardiser(train["values"], train["static"])
     use_mask = not args.no_mask
+    patients = {}
     for name, split in (("train", train), ("validation", val), ("test", test)):
+        patients[name] = {patient_of[e] for e in split["encounter_id"]}
         print(f"  {name}: {len(split['label'])} windows, {int(split['label'].sum())} positive, "
-              f"{len(np.unique([patient_of[e] for e in split['encounter_id']]))} patients")
+              f"{len(patients[name])} patients")
+    # The reason for grouping: no patient in two splits. Stop the run if that ever breaks, and
+    # print the count so train.log carries the evidence.
+    shared_patients = ((patients["train"] & patients["validation"]) | (patients["train"] & patients["test"])
+                       | (patients["validation"] & patients["test"]))
+    assert not shared_patients, f"{len(shared_patients)} patients are in more than one split"
+    print(f"shared patients between splits: {len(shared_patients)}")
     print(f"mask channel: {'on' if use_mask else 'off (--no-mask ablation)'}")
     positives = train["label"].sum()
     pos_weight = float((len(train["label"]) - positives) / max(positives, 1))

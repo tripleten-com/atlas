@@ -200,6 +200,11 @@ def main() -> None:
     y_train, y_test = y[train_idx], y[test_idx]
     print(f"split grouped by {GROUP}: train {len(train_idx)} rows ({y_train.mean():.1%} positive), "
           f"test {len(test_idx)} rows ({y_test.mean():.1%} positive)")
+    # The reason for grouping: no patient on both sides. Stop the run if that ever breaks, and
+    # print the count so train.log carries the evidence.
+    shared_patients = set(groups[train_idx]) & set(groups[test_idx])
+    assert not shared_patients, f"{len(shared_patients)} patients are in both train and test"
+    print(f"shared patients between train and test: {len(shared_patients)}")
 
     # ---- fit
     pipeline = build_pipeline(categorical_columns, numeric_columns)
