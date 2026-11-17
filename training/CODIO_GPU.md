@@ -27,19 +27,28 @@ training/train_deterioration.py
 
 ## Before the session
 
-1. Sign in at https://codio.com/auth/tripleten and open the AI/ML Codio course. If this is your
-   first lab, enrol with the course token from the lab lesson page (it is behind the TripleTen
-   login, never in this repository).
-2. Start the "Atlas Machine Learning on AWS" lab. The hour starts now.
+1. Sign in at https://codio.com/auth/tripleten and open the AAI/ML Project 5 course. If this is
+   your first lab, join it with the link or the course token from the lab lesson page (they are
+   behind the TripleTen login, never in this repository).
+2. Start the "Atlas Machine Learning on AWS" lab. The hour starts now. The account is empty
+   again, so the bucket, the role and the network are made again in this session. The lab's
+   checks are written for the CPU run in `CODIO.md` and look for its `t2.micro`, so don't run
+   them in this session. When this session is over, mark the lab as completed; it becomes
+   read-only.
 
 ## In the session
 
-1. In the S3 console create a bucket (`atlas-training-<your initials>-<today>`) and upload the
-   five files through the console.
-2. In the EC2 console launch an instance. In the AMI search pick **Deep Learning OSS Nvidia
-   Driver AMI GPU PyTorch** (Amazon Linux 2023 or Ubuntu, whichever the lab lists); instance
-   type **g4dn.xlarge**; the lab's IAM instance profile under Advanced details; proceed without
-   a key pair. Everything else as in `CODIO.md`.
+1. Repeat the lab pages from "Create Your Project Bucket in S3" to "Create a VPC", as in
+   `CODIO.md` steps 1 to 4: a bucket named `<letters>-ml-project-<four digits>` with the folders
+   `datasets/` and `models/`, the five files uploaded into `datasets/`, the role
+   `EC2-S3-Access-Role` and the network `my-project-vpc`.
+2. In the EC2 console launch an instance as on the lab page "Launch an EC2 Instance with the IAM
+   Role", with two changes. In the AMI search type the full name **Deep Learning OSS Nvidia
+   Driver AMI GPU PyTorch** and pick the Amazon Linux 2023 image under Quick Start (a shorter
+   search finds nothing there); instance type **g4dn.xlarge**. Everything else as in
+   `CODIO.md`: `my-project-vpc` and its public subnet with Auto-assign public IP on,
+   `EC2-S3-Access-Role` under Advanced details > IAM instance profile, proceed without a key
+   pair.
 3. Connect with EC2 Instance Connect. The first command is:
 
    ```bash
@@ -49,15 +58,15 @@ training/train_deterioration.py
    A healthy answer is a table naming `Tesla T4` with about 15 GB of memory and a driver and
    CUDA version at the top. If the command is missing or says no devices were found, stop,
    terminate the instance and launch again with the right AMI; a CPU run here wastes the session.
-4. Activate the preinstalled PyTorch environment. The login banner names it; on the PyTorch
-   AMI it is:
+4. Activate the preinstalled PyTorch environment. The login banner names it; on the Amazon
+   Linux 2023 PyTorch AMI it is:
 
    ```bash
-   source activate pytorch
+   source /opt/pytorch/bin/activate
    python3 -c "import torch; print(torch.__version__, torch.cuda.is_available())"
    ```
 
-   It must print `True`. Then install the two or three packages the environment lacks:
+   It must end in `True` (for example `2.14.1+cu130 True`). Then install the two or three packages the environment lacks:
 
    ```bash
    python3 -m pip install pandas scikit-learn onnx
@@ -74,18 +83,20 @@ training/train_deterioration.py
 5. Fetch the files:
 
    ```bash
-   aws s3 cp s3://<your-bucket>/vitals_hourly.csv .
-   aws s3 cp s3://<your-bucket>/encounters_static.csv .
-   aws s3 cp s3://<your-bucket>/deterioration.columns.json .
-   aws s3 cp s3://<your-bucket>/deterioration.py .
-   aws s3 cp s3://<your-bucket>/train_deterioration.py .
+   mkdir -p ~/ml-project/data ~/ml-project/models
+   cd ~/ml-project
+   aws s3 cp s3://<your-bucket>/datasets/vitals_hourly.csv data/
+   aws s3 cp s3://<your-bucket>/datasets/encounters_static.csv data/
+   aws s3 cp s3://<your-bucket>/datasets/deterioration.columns.json data/
+   aws s3 cp s3://<your-bucket>/datasets/deterioration.py .
+   aws s3 cp s3://<your-bucket>/datasets/train_deterioration.py .
    ```
 
 6. Train, with the CPU-versus-GPU timing switched on so the comparison comes from this
    instance:
 
    ```bash
-   python3 train_deterioration.py --data-dir . --out run --device cuda --time-one-epoch
+   python3 train_deterioration.py --data-dir data --out models --device cuda --time-one-epoch
    ```
 
    The first line must say `on ec2 (i-...)`. The log then shows the `nvidia-smi` table, the
@@ -97,14 +108,10 @@ training/train_deterioration.py
 8. Copy the results up:
 
    ```bash
-   aws s3 cp run/deterioration.onnx s3://<your-bucket>/
-   aws s3 cp run/deterioration.json s3://<your-bucket>/
-   aws s3 cp run/training_run.json s3://<your-bucket>/
-   aws s3 cp run/train.log s3://<your-bucket>/
-   aws s3 cp run/onnx_check.npz s3://<your-bucket>/
+   aws s3 cp models/ s3://<your-bucket>/models/ --recursive
    ```
 
-9. Take the second screenshot: the S3 console showing the objects in your bucket.
+9. Take the second screenshot: the S3 console showing the five objects in the bucket's `models/` folder.
 10. Select each object and press Download. Do this before the hour ends; after that the bucket
     is gone.
 
@@ -137,13 +144,13 @@ docker compose restart backend
 
 ## If something goes wrong
 
-- `torch.cuda.is_available()` prints `False` on the PyTorch AMI: you are not in the conda
-  environment (`source activate pytorch`), or the instance is not a `g4dn`. Check `nvidia-smi`.
+- `torch.cuda.is_available()` prints `False` on the PyTorch AMI: the PyTorch environment
+  is not active (`source /opt/pytorch/bin/activate`), or the instance is not a `g4dn`. Check `nvidia-smi`.
 - `pip install torch` from the default index gives a CPU-only build. Use the `--index-url`
   line above.
 - `--device cuda` exits with "torch.cuda.is_available() is False": same cause as the first bullet.
 - The session ran out: nothing persists. Book another session. A laptop or Colab run of the
   same script is only the rehearsal: it is labelled `trained_on: local` and fails the Task 2
   Check-list line on the GPU run.
-- Instance types other than `t2.micro` and `g4dn.xlarge`, longer sessions, SageMaker and a
+- Instance types other than `t2.micro` and `g4dn.xlarge`, SageMaker and a
   persistent bucket are not part of this lab.
